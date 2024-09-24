@@ -1,5 +1,5 @@
 import pandas as pd
-
+total_case_map = {}
 def processDataRawToRealData(data):
     # Init dataframes
     dataframes = {}
@@ -13,6 +13,10 @@ def processDataRawToRealData(data):
 
     # return
     return dataframes
+
+
+def getCountOfCase():
+    return total_case_map
     
 def groupCaseData(data):
     # Group case: Find INV_NO with multiple ZZ_IF_ID and BL_SRC_NO
@@ -24,10 +28,11 @@ def groupCaseData(data):
     # Filter for INV_NO where both ZZ_IF_ID and BL_SRC_NO have more than one unique value
     group_case = grouped_data[(grouped_data['ZZ_IF_ID'] > 1) & (grouped_data['BL_SRC_NO'] > 1)]
     filtered_data  = data[data['INV_NO'].isin(group_case['INV_NO'])]
+    total_case_map['group_case'] = filtered_data.shape[0]
     dataframes = {
-        'split_case_manual': pd.concat([filtered_data], ignore_index=True),
+        'group_case': pd.concat([filtered_data], ignore_index=True),
     }
-    # Show the results
+    # Return the results
     return dataframes
 
 def supplementCaseData(data):
@@ -38,11 +43,10 @@ def supplementCaseData(data):
     supplement_case = supplement_data[(supplement_data['ZZ_IF_ID'] > 1)]
     
     filtered_data  = data[data['INV_NO'].isin(supplement_case['INV_NO'])]
+    total_case_map['supplement_case'] = filtered_data.shape[0]
     dataframes = {
         'supplement_case': pd.concat([filtered_data], ignore_index=True),
     }
-    print("supplement case")
-    print(supplement_case)
     return dataframes
     
 def splitManualCaseData(data):
@@ -55,12 +59,10 @@ def splitManualCaseData(data):
     # Filter for ZZ_IF_ID where both INV_NO and INV_CUST_CD have more than one unique value
     split_case_manual = split_data[(split_data['INV_NO'] > 1)]
     filtered_data  = data[data['INV_NO'].isin(split_case_manual['INV_NO'])]
+    total_case_map['split_case_manual'] = filtered_data.shape[0]
     dataframes = {
         'split_case_manual': pd.concat([filtered_data], ignore_index=True),
     }
-    # Show the results
-    print("split case manual")
-    print(split_case_manual)
     return dataframes
 
 
@@ -75,13 +77,10 @@ def splitCaseData(data):
     # Filter for ZZ_IF_ID where both INV_NO and INV_CUST_CD have more than one unique value
     split_case = split_data[(split_data['INV_NO'] > 1) & (split_data['INV_CUST_CD'] > 1)]   
     filtered_data  = data[data['INV_NO'].isin(split_case['INV_NO'])]
+    total_case_map['split_case'] = filtered_data.shape[0]
     dataframes = {
         'split_case': pd.concat([filtered_data], ignore_index=True),
     }
-    
-    # Show the results
-    print("split case multipayer")
-    print(split_case)
     return dataframes
 
 def singleCase(data):
@@ -92,10 +91,10 @@ def singleCase(data):
     
     singleCase_data = single_case_data[(single_case_data['ZZ_IF_ID'] == 1)]
     filtered_data  = data[data['INV_NO'].isin(singleCase_data['INV_NO'])]
+    total_case_map['single_case'] = filtered_data.shape[0]
     dataframes = {
         'single_case': pd.concat([filtered_data], ignore_index=True),
     }
-    print("single case")
     return dataframes
 
 

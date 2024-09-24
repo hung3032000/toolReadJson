@@ -1,5 +1,5 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
-import sys
+
 from process import *
 
 
@@ -155,7 +155,7 @@ class Ui_MainWindow(object):
         self.statusText.setGeometry(QtCore.QRect(20, 120, 971, 121))
         self.statusText.setMaximumSize(QtCore.QSize(1000, 1000))
         font = QtGui.QFont()
-        font.setPointSize(16)
+        font.setPointSize(14)
         self.statusText.setFont(font)
         self.statusText.setScaledContents(False)
         self.statusText.setAlignment(QtCore.Qt.AlignLeading|QtCore.Qt.AlignLeft|QtCore.Qt.AlignTop)
@@ -179,7 +179,7 @@ class Ui_MainWindow(object):
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
         # Event
-        self.pushButton.clicked.connect(lambda: onFuncButtonClick(self, self.option_one.isChecked()))
+        self.pushButton.clicked.connect(lambda: onFuncButtonClick(self, MainWindow, self.option_one.isChecked()))
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
