@@ -3,9 +3,10 @@ from openpyxl import load_workbook
 import os
 from util import *
 
-def saveNewExcel(self, dataframes, file_name, save_flag) :    
+def saveNewExcel(self, dataframes, file_name, save_flag) :
+    file_path_exist = os.path.exists(os.getcwd()+'\\'+file_name)
     try:
-        if os.path.exists(file_name) == True & save_flag != 1:
+        if  (file_path_exist == True and save_flag == 0):
             # Mở file Excel
             book = load_workbook(file_name)
             

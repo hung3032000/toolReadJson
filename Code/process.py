@@ -25,7 +25,7 @@ def onFuncButtonClick(self,MainWindown, optione1):
 def saveExcel(self, json_file_path):
     print ("save And Replace Excel option:")
     data_after_process =  processData(self, json_file_path)
-    saveNewExcel(self, data_after_process, file_name,1)
+    saveNewExcel(self, data_after_process, file_name, 0)
     setDataCount(self)
     update_message_status_box(self, "Done Save Excel File")
     
@@ -33,7 +33,7 @@ def saveExcel(self, json_file_path):
 def saveAndReplaceExcel(self, json_file_path):
     print ("save And Replace Excel option:")
     data_after_process =  processData(self, json_file_path)
-    saveNewExcel(self, data_after_process, file_name,1)
+    saveNewExcel(self, data_after_process, file_name, 1)
     setDataCount(self)
     print ("Done processing")
     update_message_status_box(self, "Done Save And Replace Excel")
