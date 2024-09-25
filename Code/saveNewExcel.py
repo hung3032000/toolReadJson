@@ -5,7 +5,7 @@ from util import *
 
 def saveNewExcel(self, dataframes, file_name, save_flag) :    
     try:
-        if os.path.exists(file_name) & save_flag != 1:
+        if os.path.exists(file_name) == True & save_flag != 1:
             # Mở file Excel
             book = load_workbook(file_name)
             
