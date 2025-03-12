@@ -10,6 +10,7 @@ def processDataRawToRealData(data):
     dataframes.update(groupCaseData(data))
     dataframes.update(supplementCaseData(data))
     dataframes.update(singleCase(data))
+    dataframes.update(mergeCase(data))
 
     # return
     return dataframes
@@ -98,3 +99,15 @@ def singleCase(data):
     return dataframes
 
 
+def mergeCase(data):
+    mergeCase = data.groupby('INV_NO').agg({
+        'INV_ISS_CURR_CD': pd.Series.nunique
+    }).reset_index()
+    
+    mergeCase_data = mergeCase[(mergeCase['INV_ISS_CURR_CD'] > 1)]
+    filtered_data  = data[data['INV_NO'].isin(mergeCase_data['INV_NO'])]
+    total_case_map['merge_case'] = filtered_data.shape[0]
+    dataframes = {
+        'merge_case': pd.concat([filtered_data], ignore_index=True),
+    }
+    return dataframes

@@ -4,100 +4,19 @@ import os
 
 
 
-
-
-file_path = 'SearchData2.xlsx'
-data = pd.read_excel(file_path)
-
-# Group case: Find INV_NO with multiple ZZ_IF_ID and BL_SRC_NO
-grouped_data = data.groupby('INV_NO').agg({
-    'ZZ_IF_ID': pd.Series.nunique, 
-    'BL_SRC_NO': pd.Series.nunique
-}).reset_index()
-
-# Filter for INV_NO where both ZZ_IF_ID and BL_SRC_NO have more than one unique value
-group_case = grouped_data[(grouped_data['ZZ_IF_ID'] > 1) & (grouped_data['BL_SRC_NO'] > 1)]
-
-# Show the results
-print("group case")
-print(group_case)
+json_data = [{"SRCTAID":"LEHA21329805332","INV_ISS_OFC":"LEHBB","PAY_OFC_LOCL_CURR_CD":"EUR","INV_CUST_CD":"FR102887","INV_NO":"330010000026","INV_ISS_DT":"2024-09-17","INV_ISS_CURR_CD":"USD","INV_TTL_AMT":-1936.00,"BL_INV_TTL_AMT":-1936.00,"BL_SRC_NO":"LEHE32264900","BKG_NO":"LEHE32264900","SUBPROCESS":"FRT","ZZ_IF_ID":"LEHA213298053","CHG_CD":"EMS","CHG_CURR_CD":"USD","TRF_RT_AMT":250.000,"CHG_TO_USD_XCH_RT":1.00000,"CHG_TO_LOCL_XCH_RT":0.92474,"PER_TP_CD":"BX","BIT_QUANTITY":-4.000,"CHG_AMT":-1000.00,"INV_AMT":-1000.00,"INV_LOCL_AMT":-924.74,"INV_TTL_LOCL_AMT":-6062.30,"BL_INV_TTL_LOCL_AMT":-6062.30,"DR_INV_NO":"","INV_SRC_NO":"","MIG_FLG":"","RVS_RSN":"","RVS_NEW_INV_NO":0,"RVS_OLD_INV_NO":0,"INV_REF_NO":"FR EMI MS240163 / FM01968","NET_DUE_DT":"2024-11-16"},{"SRCTAID":"LEHA21329805312","INV_ISS_OFC":"LEHBB","PAY_OFC_LOCL_CURR_CD":"EUR","INV_CUST_CD":"FR102887","INV_NO":"330010000026","INV_ISS_DT":"2024-09-17","INV_ISS_CURR_CD":"EUR","INV_TTL_AMT":-4272.00,"BL_INV_TTL_AMT":-4272.00,"BL_SRC_NO":"LEHE32264900","BKG_NO":"LEHE32264900","SUBPROCESS":"FRT","ZZ_IF_ID":"LEHA213298053","CHG_CD":"OIH","CHG_CURR_CD":"","TRF_RT_AMT":1068.000,"CHG_TO_USD_XCH_RT":1.10312,"CHG_TO_LOCL_XCH_RT":1.00000,"PER_TP_CD":"D5","BIT_QUANTITY":-4.000,"CHG_AMT":0,"INV_AMT":-4272.00,"INV_LOCL_AMT":-4272.00,"INV_TTL_LOCL_AMT":-6062.30,"BL_INV_TTL_LOCL_AMT":-6062.30,"DR_INV_NO":"","INV_SRC_NO":"","MIG_FLG":"","RVS_RSN":"","RVS_NEW_INV_NO":0,"RVS_OLD_INV_NO":0,"INV_REF_NO":"FR EMI MS240163 / FM01968","NET_DUE_DT":"2024-11-16"},{"SRCTAID":"LEHA21329805342","INV_ISS_OFC":"LEHBB","PAY_OFC_LOCL_CURR_CD":"EUR","INV_CUST_CD":"FR102887","INV_NO":"330010000026","INV_ISS_DT":"2024-09-17","INV_ISS_CURR_CD":"USD","INV_TTL_AMT":-1936.00,"BL_INV_TTL_AMT":-1936.00,"BL_SRC_NO":"LEHE32264900","BKG_NO":"LEHE32264900","SUBPROCESS":"FRT","ZZ_IF_ID":"LEHA213298053","CHG_CD":"OFT","CHG_CURR_CD":"USD","TRF_RT_AMT":200.000,"CHG_TO_USD_XCH_RT":1.00000,"CHG_TO_LOCL_XCH_RT":0.92474,"PER_TP_CD":"D5","BIT_QUANTITY":-4.000,"CHG_AMT":-800.00,"INV_AMT":-800.00,"INV_LOCL_AMT":-739.79,"INV_TTL_LOCL_AMT":-6062.30,"BL_INV_TTL_LOCL_AMT":-6062.30,"DR_INV_NO":"","INV_SRC_NO":"","MIG_FLG":"","RVS_RSN":"","RVS_NEW_INV_NO":0,"RVS_OLD_INV_NO":0,"INV_REF_NO":"FR EMI MS240163 / FM01968","NET_DUE_DT":"2024-11-16"},{"SRCTAID":"LEHA21329805322","INV_ISS_OFC":"LEHBB","PAY_OFC_LOCL_CURR_CD":"EUR","INV_CUST_CD":"FR102887","INV_NO":"330010000026","INV_ISS_DT":"2024-09-17","INV_ISS_CURR_CD":"USD","INV_TTL_AMT":-1936.00,"BL_INV_TTL_AMT":-1936.00,"BL_SRC_NO":"LEHE32264900","BKG_NO":"LEHE32264900","SUBPROCESS":"FRT","ZZ_IF_ID":"LEHA213298053","CHG_CD":"ETS","CHG_CURR_CD":"USD","TRF_RT_AMT":34.000,"CHG_TO_USD_XCH_RT":1.00000,"CHG_TO_LOCL_XCH_RT":0.92474,"PER_TP_CD":"40","BIT_QUANTITY":-4.000,"CHG_AMT":-136.00,"INV_AMT":-136.00,"INV_LOCL_AMT":-125.77,"INV_TTL_LOCL_AMT":-6062.30,"BL_INV_TTL_LOCL_AMT":-6062.30,"DR_INV_NO":"","INV_SRC_NO":"","MIG_FLG":"","RVS_RSN":"","RVS_NEW_INV_NO":0,"RVS_OLD_INV_NO":0,"INV_REF_NO":"FR EMI MS240163 / FM01968","NET_DUE_DT":"2024-11-16"}]
 
     
-# Split case: Find ZZ_IF_ID with multiple INV_NO
-split_data = data.groupby('ZZ_IF_ID').agg({
-    'INV_NO': pd.Series.nunique, 
-    'INV_CUST_CD': pd.Series.nunique
+
+data = pd.DataFrame(json_data)
+name = 'dataFromJsonToExcel'
+excel_file_path = name + '.xlsx'
+data.to_excel(excel_file_path, index=False, engine='openpyxl')
+   
+mergeCase = data.groupby('INV_NO').agg({
+    'INV_ISS_CURR_CD': pd.Series.nunique
 }).reset_index()
-
-# Filter for ZZ_IF_ID where both INV_NO and INV_CUST_CD have more than one unique value
-split_case_manual = split_data[(split_data['INV_NO'] > 1)]
-
-# Show the results
-print("split case manual")
-print(split_case_manual)
-
-
-# Split case: Find ZZ_IF_ID with multiple INV_NO and INV_CUST_CD
-# Filter for ZZ_IF_ID where both INV_NO and INV_CUST_CD have more than one unique value
-split_case = split_data[(split_data['INV_NO'] > 1) & (split_data['INV_CUST_CD'] > 1)]
-
-# Show the results
-print("split case multipayer")
-print(split_case)
-
-
-supplement_data = data.groupby(['INV_NO', 'BL_SRC_NO']).agg({
-    'ZZ_IF_ID': pd.Series.nunique
-}).reset_index()
-supplement_case = supplement_data[(supplement_data['ZZ_IF_ID'] > 1)]
-
-print("supplement case")
-print(supplement_case)
-
-supplement_data = data.groupby(['INV_NO', 'BL_SRC_NO', 'INV_CUST_CD']).agg({
-    'ZZ_IF_ID': pd.Series.nunique
-}).reset_index()
-supplement_case_test = supplement_data[(supplement_data['ZZ_IF_ID'] > 1)]
-
-print("supplement_case_test")
-print(supplement_case_test)
-dataframes = {
-    'split_case_manual': pd.concat([split_case_manual], ignore_index=True),
-    'split_case': pd.concat([split_case], ignore_index=True),
-    'group_case': pd.concat([group_case], ignore_index=True),
-    'supplement_case_test': pd.concat([supplement_case_test], ignore_index=True)
-}
-
-
-# Tạo file Excel mới
-
-file_name = 'output.xlsx'
-
-if os.path.exists(file_name):
-    # Mở file Excel
-    book = load_workbook(file_name)
     
-    # Lấy danh sách các sheet có trong workbook
-    sheet_names = book.sheetnames
-    
-    # Lặp qua từng sheet để xử lý dữ liệu
-    with pd.ExcelWriter(file_name, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
-        for sheet_name in sheet_names:
-            # Đọc sheet hiện tại
-            existing_df = pd.read_excel(file_name, sheet_name=sheet_name)
-            
-            if sheet_name in dataframes:
-                # Gộp dữ liệu mới vào dữ liệu hiện tại
-                updated_df = pd.concat([existing_df, dataframes[sheet_name]], ignore_index=True)
-                
-                # Ghi lại toàn bộ dữ liệu (cũ + mới) vào sheet
-                updated_df.to_excel(writer, sheet_name=sheet_name, index=False)
-                print(f"Đã thêm dữ liệu mới vào sheet '{sheet_name}'.")
-else:
-    # Tạo file mới và ghi dữ liệu
-    with pd.ExcelWriter(file_name, engine='openpyxl') as writer:
-        split_case_manual.to_excel(writer, sheet_name='split_case_manual', index=False)
-        split_case.to_excel(writer, sheet_name='split_case', index=False)
-        group_case.to_excel(writer, sheet_name='group_case', index=False)
-        supplement_case_test.to_excel(writer, sheet_name='supplement_case_test', index=False)
-    print(f"Đã tạo file mới '{file_name}' và ghi dữ liệu vào sheet.")
+mergeCase_data = mergeCase[(mergeCase['INV_ISS_CURR_CD'] > 1)]
+
+print(mergeCase_data)

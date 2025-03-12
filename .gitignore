@@ -162,3 +162,5 @@ cython_debug/
 #.idea/
 config.json
 *.xlsx
+/output
+output.rar

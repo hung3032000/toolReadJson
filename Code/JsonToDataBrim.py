@@ -342,6 +342,7 @@ class Ui_MainWindow(object):
         self.envCombobox_2.setItemText(1, _translate("MainWindow", "HKGBB"))
         self.envCombobox_2.setItemText(2, _translate("MainWindow", "SELBB"))
         self.envCombobox_2.setItemText(3, _translate("MainWindow", "PUSBB"))
+        self.envCombobox_2.setItemText(4, _translate("MainWindow", "LEHBB"))
         self.label_4.setText(_translate("MainWindow", "office"))
         self.menuInfo.setTitle(_translate("MainWindow", "Info"))
         self.actionAbout_this_tool.setText(_translate("MainWindow", "About this tool"))

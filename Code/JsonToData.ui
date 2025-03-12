@@ -70,7 +70,7 @@
      <rect>
       <x>10</x>
       <y>60</y>
-      <width>311</width>
+      <width>191</width>
       <height>91</height>
      </rect>
     </property>
@@ -461,7 +461,7 @@ QGroupBox::title {
    <widget class="QComboBox" name="envCombobox">
     <property name="geometry">
      <rect>
-      <x>440</x>
+      <x>390</x>
       <y>10</y>
       <width>121</width>
       <height>41</height>
@@ -478,30 +478,10 @@ QGroupBox::title {
      </property>
     </item>
    </widget>
-   <widget class="QDateEdit" name="fromDate">
-    <property name="geometry">
-     <rect>
-      <x>660</x>
-      <y>10</y>
-      <width>121</width>
-      <height>41</height>
-     </rect>
-    </property>
-   </widget>
-   <widget class="QDateEdit" name="toDtae">
-    <property name="geometry">
-     <rect>
-      <x>890</x>
-      <y>10</y>
-      <width>121</width>
-      <height>41</height>
-     </rect>
-    </property>
-   </widget>
    <widget class="QLabel" name="label">
     <property name="geometry">
      <rect>
-      <x>400</x>
+      <x>360</x>
       <y>20</y>
       <width>21</width>
       <height>20</height>
@@ -511,12 +491,10 @@ QGroupBox::title {
      <string>Env</string>
     </property>
    </widget>
-
-   
-      <widget class="QLineEdit" name="fromDate">
+   <widget class="QLineEdit" name="fromDate">
     <property name="geometry">
      <rect>
-      <x>660</x>
+      <x>610</x>
       <y>10</y>
       <width>121</width>
       <height>41</height>
@@ -526,11 +504,10 @@ QGroupBox::title {
      <string>20240901</string>
     </property>
    </widget>
-
    <widget class="QLineEdit" name="toDate">
     <property name="geometry">
      <rect>
-      <x>890</x>
+      <x>810</x>
       <y>10</y>
       <width>121</width>
       <height>41</height>
@@ -539,152 +516,11 @@ QGroupBox::title {
     <property name="text">
      <string>20240901</string>
     </property>
-   </widget>
-
-
-
-
-
-   <widget class="QWidget" name="layoutWidget_2">
-    <property name="geometry">
-     <rect>
-      <x>330</x>
-      <y>60</y>
-      <width>351</width>
-      <height>91</height>
-     </rect>
-    </property>
-    <layout class="QGridLayout" name="gridLayout_2">
-     <property name="spacing">
-      <number>0</number>
-     </property>
-     <item row="1" column="0">
-      <widget class="QWidget" name="horizontalWidget_4" native="true">
-       <property name="styleSheet">
-        <string notr="true">QWidget{
-   	border: 1px solid black;
-}</string>
-       </property>
-       <layout class="QHBoxLayout" name="horizontalLayout_5">
-        <property name="spacing">
-         <number>0</number>
-        </property>
-        <property name="leftMargin">
-         <number>0</number>
-        </property>
-        <property name="topMargin">
-         <number>0</number>
-        </property>
-        <property name="rightMargin">
-         <number>0</number>
-        </property>
-        <property name="bottomMargin">
-         <number>0</number>
-        </property>
-        <item>
-         <widget class="QLabel" name="label_13">
-          <property name="styleSheet">
-           <string notr="true"/>
-          </property>
-          <property name="text">
-           <string>0</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignCenter</set>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLabel" name="label_14">
-          <property name="styleSheet">
-           <string notr="true"/>
-          </property>
-          <property name="text">
-           <string>0</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignCenter</set>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLabel" name="label_15">
-          <property name="styleSheet">
-           <string notr="true"/>
-          </property>
-          <property name="text">
-           <string>0</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignCenter</set>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </widget>
-     </item>
-     <item row="0" column="0">
-      <widget class="QWidget" name="horizontalWidget_5" native="true">
-       <property name="styleSheet">
-        <string notr="true">QWidget{
-   	border: 1px solid black;
-}</string>
-       </property>
-       <layout class="QHBoxLayout" name="horizontalLayout_6">
-        <property name="spacing">
-         <number>0</number>
-        </property>
-        <property name="leftMargin">
-         <number>0</number>
-        </property>
-        <property name="topMargin">
-         <number>0</number>
-        </property>
-        <property name="rightMargin">
-         <number>0</number>
-        </property>
-        <property name="bottomMargin">
-         <number>0</number>
-        </property>
-        <item>
-         <widget class="QLabel" name="split_manual_case_2">
-          <property name="text">
-           <string>Split Manual Case</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignCenter</set>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLabel" name="group_case_2">
-          <property name="text">
-           <string>Group Case</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignCenter</set>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLabel" name="supple_case_2">
-          <property name="text">
-           <string>Supplement</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignCenter</set>
-          </property>
-         </widget>
-        </item>
-       </layout>
-      </widget>
-     </item>
-    </layout>
    </widget>
    <widget class="QComboBox" name="envCombobox_2">
     <property name="geometry">
      <rect>
-      <x>250</x>
+      <x>210</x>
       <y>10</y>
       <width>121</width>
       <height>41</height>
@@ -711,17 +547,138 @@ QGroupBox::title {
      </property>
     </item>
    </widget>
-   <widget class="QLabel" name="label_4">
+   <widget class="QGroupBox" name="horizontalGroupBox_3">
     <property name="geometry">
      <rect>
-      <x>200</x>
+      <x>210</x>
+      <y>60</y>
+      <width>471</width>
+      <height>91</height>
+     </rect>
+    </property>
+    <property name="sizePolicy">
+     <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+      <horstretch>0</horstretch>
+      <verstretch>0</verstretch>
+     </sizepolicy>
+    </property>
+    <property name="cursor">
+     <cursorShape>ArrowCursor</cursorShape>
+    </property>
+    <property name="whatsThis">
+     <string/>
+    </property>
+    <property name="autoFillBackground">
+     <bool>false</bool>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">QGroupBox {
+    border: 2px solid black;
+    border-radius: 5px;
+    margin-top: 1ex; /* leave space at the top for the title */
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 10px;
+    padding: 0 3px 0 3px;
+}</string>
+    </property>
+    <property name="title">
+     <string>Advance serach</string>
+    </property>
+    <layout class="QHBoxLayout" name="horizontalLayout_5">
+     <item>
+      <widget class="QLabel" name="label_5">
+       <property name="text">
+        <string>BL No</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="bl_no">
+       <property name="text">
+        <string/>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="label_4">
+       <property name="text">
+        <string>INV No</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="inv_no">
+       <property name="text">
+        <string/>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="label_11">
+       <property name="text">
+        <string>Customer Code</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="inv_no_2">
+       <property name="text">
+        <string/>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="advanceSearch">
+       <property name="contextMenuPolicy">
+        <enum>Qt::ActionsContextMenu</enum>
+       </property>
+       <property name="text">
+        <string>More condition</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </widget>
+   <widget class="QLabel" name="label_12">
+    <property name="geometry">
+     <rect>
+      <x>550</x>
+      <y>20</y>
+      <width>51</width>
+      <height>21</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>From date</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="todate">
+    <property name="geometry">
+     <rect>
+      <x>760</x>
       <y>20</y>
       <width>41</width>
+      <height>21</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>To date</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_2">
+    <property name="geometry">
+     <rect>
+      <x>170</x>
+      <y>20</y>
+      <width>31</width>
       <height>20</height>
      </rect>
     </property>
     <property name="text">
-     <string>office</string>
+     <string>Office</string>
     </property>
    </widget>
   </widget>

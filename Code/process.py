@@ -101,6 +101,7 @@ def setDataCount(self):
     self.split_manual_case_count.setText(str(result_count_of_case['split_case_manual']))
     self.group_case_count.setText(str(result_count_of_case['group_case']))
     self.supplement_case_count.setText(str(result_count_of_case['supplement_case']))
+    print(str(result_count_of_case['merge_case']))
 
 
 def updateConfigSourceCode(self, config_file="config.json"):
