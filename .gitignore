@@ -164,3 +164,4 @@ config.json
 *.xlsx
 /output
 output.rar
+*.txt
