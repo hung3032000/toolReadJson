@@ -16,7 +16,7 @@ def onFuncButtonClick(self, MainWindown, optione1):
     API_HOME_STG = config_data["envData"].get("API_HOME_STG", {})
     URL = config_data["envData"].get("URL_DATA", {})
     URL_STG = config_data["envData"].get("URL_DATA_STG", {}) 
-    # Lấy giá trị từ ComboBox và xác định URL dựa trên giá trị chọn
+    # get value from ComboBox => curl
     env = self.envCombobox.currentText().strip()
     if env == "STG":
         url = API_HOME_STG + URL_STG
@@ -28,16 +28,13 @@ def onFuncButtonClick(self, MainWindown, optione1):
     
     try:
         updateConfigSourceCode(self, "config.json")
-        # Đọc header và body từ file "header_body.json"
+        # Read header and body from file "header_body.json"
         headers = config_data.get("headers", {})
         body = json.dumps(config_data.get("body",{}), indent=4)
-        # Body là một chuỗi JSON (có thể điều chỉnh tham số theo API của bạn)
-        
-        # Gọi API sử dụng POST với header và body đã cấu hình
         response = requests.post(url, headers=headers, data=body)
  
-        response.raise_for_status()  # Kiểm tra lỗi HTTP
-        # Lấy dữ liệu trả về dạng JSON
+        response.raise_for_status()  # check HTTP error
+        # get data and return JSON
         if response.status_code == 401:
             update_message_status_box(self, "Error 401 Unauthorized: Token invalid.")
             print("401 Unauthorized:", response.text)
@@ -73,7 +70,7 @@ def saveAndReplaceExcel(self, json_data):
     update_message_status_box(self, "Done Save And Replace Excel")
 
 def processData(self, json_data):
-    # Chuyển dữ liệu JSON thành DataFrame và lưu tạm thời sang Excel nếu cần
+    # covert JSON to DataFrame and save to Excel if need
     excelFilePatch = saveDataFromJsonToExcel(self, json_data)
     data_raw = readFileExcel(excelFilePatch)
     data_after_process = processDataRawToRealData(data_raw)
@@ -82,7 +79,6 @@ def processData(self, json_data):
     return data_after_process
 
 def saveDataFromJsonToExcel(self, json_data):
-    # Chuyển dữ liệu JSON thành DataFrame
     data = pd.DataFrame(json_data)
     name = 'dataFromJsonToExcel'
     excel_file_path = name + '.xlsx'
@@ -106,8 +102,8 @@ def setDataCount(self):
 
 def updateConfigSourceCode(self, config_file="config.json"):
     """
-    Đọc file config.json, cập nhật trường 'source_code' trong body dựa trên các checkbox,
-    và ghi lại file. Trả về config_data đã cập nhật nếu thành công, ngược lại trả về None.
+    Read config.json, Update 'source_code' in body base on checkbox,
+    and save into file. Return config_data if success, else None.
     """
     try:
         office = self.officeCode.currentText()
@@ -118,12 +114,9 @@ def updateConfigSourceCode(self, config_file="config.json"):
         
         with open(office+'.txt', "r", encoding="utf-8") as f:
             lines = f.readlines()
-        # Loại bỏ khoảng trắng thừa và dòng rỗng
+        # Trim
         cust_codes = [line.strip() for line in lines if line.strip()]
-        # Chuyển đổi thành danh sách các dict
         cust_cd_list = [{"cust_cd": code} for code in cust_codes]
-        
-        # Xây dựng danh sách mới cho "source_code"
         new_source_codes = []
         if self.MRI.isChecked():
             new_source_codes.append({"source_code": "MRI"})
@@ -140,7 +133,7 @@ def updateConfigSourceCode(self, config_file="config.json"):
         config_data["body"]["to_inv_issue_date"] = to_date
         config_data["body"]["source_code"] = new_source_codes
         config_data["body"]["cust_cd"] = cust_cd_list
-        # Ghi đè file config.json với cấu hình đã cập nhật
+        # Overwrite the config.json file with the updated configuration.
         with open(config_file, "w", encoding="utf-8") as f:
             json.dump(config_data, f, indent=4)
         
@@ -153,12 +146,12 @@ def updateConfigSourceCode(self, config_file="config.json"):
 def update_config_cust_cd(self, config_file="config.json"):
     try:
         office = self.officeCode.currentText()
-        # Đọc file txt, mỗi dòng là một cust_cd
+        # read file txt, 1 line is 1 cust_cd
         with open(office+'.txt', "r", encoding="utf-8") as f:
             lines = f.readlines()
-        # Loại bỏ khoảng trắng thừa và dòng rỗng
+        # trim
         cust_codes = [line.strip() for line in lines if line.strip()]
-        # Chuyển đổi thành danh sách các dict
+        #chang into dict
         cust_cd_list = [{"cust_cd": code} for code in cust_codes]
         return cust_cd_list
     except Exception as e:
