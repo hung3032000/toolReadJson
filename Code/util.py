@@ -1,7 +1,9 @@
+# util.py
 def update_message_status_box(self, new_status):
-    current_text = ''
-    if current_text == '':
-        new_message = f"{new_status}"
-    else:
-        new_message = f"{current_text} \n{new_status}"
-    self.statusText.append(new_message)
+    try:
+        curr = self.statusText.text() if hasattr(self.statusText, "text") else ""
+        new_msg = (curr + "\n" + str(new_status)).strip()
+        if hasattr(self.statusText, "setText"):
+            self.statusText.setText(new_msg)
+    except Exception:
+        pass
