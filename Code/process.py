@@ -27,7 +27,7 @@ def onFuncButtonClick(self, MainWindown, optione1):
         return
     
     try:
-        updateConfigSourceCode(self, "config.json")
+        config_data = updateConfigSourceCode(self, "config.json")
         # Read header and body from file "header_body.json"
         headers = config_data.get("headers", {})
         body = json.dumps(config_data.get("body",{}), indent=4)
