@@ -24,9 +24,9 @@ def processDataRawToRealData(data):
     }
 
     # TÍNH CÁC CASE
+    dataframes.update(groupCaseData(data, ctx))
     dataframes.update(splitCaseData(data, ctx))
     dataframes.update(splitManualCaseData(data, ctx))
-    dataframes.update(groupCaseData(data, ctx))
     dataframes.update(supplementCaseData(data, ctx))
     dataframes.update(mergeCase(data, ctx))
     dataframes.update(singleCase(data, ctx))  # single tính SAU CÙNG, loại chéo
