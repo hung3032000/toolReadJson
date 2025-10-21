@@ -19,7 +19,11 @@ def saveNewExcel(self, dataframes, file_name, save_flag):
                         # đọc sheet cũ
                         existing_df = pd.read_excel(file_name, sheet_name=sheet_name)
                         # gộp dữ liệu cũ + mới
-                        updated_df = pd.concat([existing_df, df], ignore_index=True)
+                        frames = [d for d in [existing_df, df] if not d.empty and not d.isna().all().all()]
+                        if frames:
+                            updated_df = pd.concat(frames, ignore_index=True)
+                        else:
+                            updated_df = pd.DataFrame()  # blank if not exist
                         updated_df.to_excel(writer, sheet_name=sheet_name, index=False)
                         update_message_status_box(self, f"Appended data to '{sheet_name}'")
                     else:

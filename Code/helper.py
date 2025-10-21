@@ -51,52 +51,99 @@ def fetch_window_adaptive(self, session, base_url, headers, base_body,
                           office, customers, fm, to, source_codes,
                           min_unit_days=1):
     """
-    customers: list cust_cd (bạn có thể truyền 1 hoặc nhiều)
-    source_codes: ví dụ ['MRI','FRT'] ...
+    customers: list cust_cd (1 hoặc nhiều)
+    source_codes: ví dụ ['MRI','FRT','MDM','MDT','MRD']
     Trả về list[dict] đã ghép.
     """
     all_rows = []
 
     def _call_once(body):
-        # 1 request “thử”
         try:
             resp = _post(session, base_url, headers, body)
             return resp, None
         except requests.RequestException as e:
             return None, f"net:{e}"
 
+    def _range_call_for_sources(fm_s, to_s):
+        """
+        Tách theo source_code khi body lớn/hỏng JSON.
+        Trả về True nếu lấy được bất kỳ data.
+        """
+        got_any = False
+        for src in source_codes:
+            body = dict(base_body)
+            body.update({
+                "ofc_cd": office,
+                "fm_inv_issue_date": fm_s,
+                "to_inv_issue_date": to_s,
+                "cust_cd": [{"cust_cd": c} for c in customers],
+                "source_code": [{"source_code": src}],
+                "fields": ["ZZ_IF_ID","INV_NO","INV_CUST_CD","BL_SRC_NO","INV_ISS_CURR_CD"],
+            })
+            resp, err = _call_once(body)
+            if err:
+                continue
+            if resp.status_code == 200:
+                try:
+                    rows = extract_records(resp.json())
+                    all_rows.extend(rows)
+                    got_any = True
+                    continue
+                except ValueError:
+                    # JSON hỏng → để chia nhỏ tiếp theo ngày/khách
+                    pass
+        return got_any
+
+    def _split_customers_and_call(fm_s, to_s):
+        """
+        Fallback cuối: tách theo customers nếu vẫn quá lớn.
+        Chia đôi danh sách customers và gọi lại một lượt (không đệ quy vô hạn).
+        """
+        if len(customers) <= 1:
+            return False
+        mid = len(customers) // 2
+        chunks = [customers[:mid], customers[mid:]]
+        got_any = False
+        for chunk in chunks:
+            body = dict(base_body)
+            body.update({
+                "ofc_cd": office,
+                "fm_inv_issue_date": fm_s,
+                "to_inv_issue_date": to_s,
+                "cust_cd": [{"cust_cd": c} for c in chunk],
+                "source_code": [{"source_code": s} for s in source_codes],
+                "fields": ["ZZ_IF_ID","INV_NO","INV_CUST_CD","BL_SRC_NO","INV_ISS_CURR_CD"],
+            })
+            resp, err = _call_once(body)
+            if err:
+                continue
+            if resp.status_code == 200:
+                try:
+                    rows = extract_records(resp.json())
+                    all_rows.extend(rows); got_any = True
+                    continue
+                except ValueError:
+                    # Nếu vẫn JSON hỏng → chia theo ngày + source cho chunk này
+                    for d in split_to_days(fm_s, to_s):
+                        _range_call_for_sources(d, d)
+                continue
+
+            # Nếu 5xx/TooBigBody → chia theo ngày + source cho chunk này
+            txt_preview = (getattr(resp, "text", "") or "")[:160]
+            if resp.status_code in (502, 504) or "TooBigBody" in txt_preview or "Body buffer overflow" in txt_preview:
+                for d in split_to_days(fm_s, to_s):
+                    _range_call_for_sources(d, d)
+                continue
+            if 500 <= resp.status_code < 600:
+                time.sleep(0.6)
+                for d in split_to_days(fm_s, to_s):
+                    _range_call_for_sources(d, d)
+        return got_any
+
     def _do_range(fm_s, to_s, depth=0):
         nonlocal all_rows
-        # Nếu đã là đơn vị nhỏ nhất (ngày) rồi mà vẫn fail 502/504 thì tách theo source_code tiếp
-        def _range_call_for_sources():
-            got_any = False
-            for src in source_codes:
-                body = dict(base_body)
-                body.update({
-                    "ofc_cd": office,
-                    "fm_inv_issue_date": fm_s,
-                    "to_inv_issue_date": to_s,
-                    "cust_cd": [{"cust_cd": c} for c in customers],
-                    "source_code": [{"source_code": src}],
-                    # giảm cột để body nhỏ hơn (nếu BE support)
-                    "fields": ["ZZ_IF_ID","INV_NO","INV_CUST_CD","BL_SRC_NO","INV_ISS_CURR_CD"],
-                })
-                resp, err = _call_once(body)
-                if err:
-                    continue
-                if resp.status_code == 200:
-                    try:
-                        rows = extract_records(resp.json())
-                        all_rows.extend(rows)
-                        got_any = True
-                        continue
-                    except ValueError:
-                        # JSON hỏng (thường do body cắt) → sẽ chia nhỏ theo ngày ở dưới
-                        pass
-                # nếu vẫn 502/504 hoặc body cắt → sẽ chia ngày
-            return got_any
 
-        # Thử 1 phát với toàn bộ sources cùng lúc (nếu bạn thích có thể bỏ để chỉ chạy theo từng source)
+        # Thử 1 phát với toàn bộ sources + toàn bộ customers trong batch
         body_try = dict(base_body)
         body_try.update({
             "ofc_cd": office,
@@ -109,10 +156,10 @@ def fetch_window_adaptive(self, session, base_url, headers, base_body,
         resp, err = _call_once(body_try)
 
         if err:
-            # lỗi mạng → chia đôi
+            # lỗi mạng → chia đôi range
             left, right = split_interval_str(fm_s, to_s)
             if fm_s == to_s:
-                # đã là 1 ngày → tách theo source_code, nếu vẫn fail sẽ tách xuống từng ngày ở dưới
+                # đã là 1 ngày → tách theo source_code, nếu vẫn fail sẽ tách theo customer ở dưới
                 pass
             else:
                 _do_range(*left, depth+1)
@@ -134,9 +181,12 @@ def fetch_window_adaptive(self, session, base_url, headers, base_body,
             if resp.status_code == 401 and depth < 2:
                 from getNewToken import updateConfigToken
                 updateConfigToken(self)
-                with open("config.json","r",encoding="utf-8") as f:
-                    cfg = json.load(f)
-                headers.update(cfg.get("headers", {}))
+                try:
+                    with open("config.json","r",encoding="utf-8") as f:
+                        cfg = json.load(f)
+                    headers.update(cfg.get("headers", {}))
+                except Exception:
+                    pass
                 _do_range(fm_s, to_s, depth+1)
                 return
 
@@ -144,7 +194,7 @@ def fetch_window_adaptive(self, session, base_url, headers, base_body,
             if resp.status_code == 204:
                 return
 
-            # 504 hoặc 502 TooBigBody → thu nhỏ
+            # 504/502 hoặc quá to → chia nhỏ
             if resp.status_code in (504, 502) or "TooBigBody" in txt_preview or "Body buffer overflow" in txt_preview:
                 # nếu > 1 ngày → chia đôi range
                 if _p(to_s) > _p(fm_s):
@@ -152,14 +202,12 @@ def fetch_window_adaptive(self, session, base_url, headers, base_body,
                     _do_range(*left, depth+1)
                     _do_range(*right, depth+1)
                     return
-                # đã là 1 ngày → tách theo source_code
-                got = _range_call_for_sources()
+                # đã 1 ngày → tách theo source_code
+                got = _range_call_for_sources(fm_s, to_s)
                 if got:
                     return
-                # vẫn không được → chia nhỏ xuống từng ngày (trường hợp fm_s==to_s sẽ rơi vào 1 phần tử)
-                for d in split_to_days(fm_s, to_s):
-                    # ở đây đã là 1 ngày rồi; nếu backend cho theo giờ, bạn có thể bẻ tiếp theo giờ
-                    _range_call_for_sources()
+                # vẫn khó → tách tiếp theo customers
+                _split_customers_and_call(fm_s, to_s)
                 return
 
             # 5xx khác → backoff rồi chia đôi nếu >1 ngày
@@ -170,8 +218,10 @@ def fetch_window_adaptive(self, session, base_url, headers, base_body,
                     _do_range(*left, depth+1)
                     _do_range(*right, depth+1)
                 else:
-                    # 1 ngày mà 5xx → thử theo source_code
-                    _range_call_for_sources()
+                    # 1 ngày mà 5xx → thử theo source_code, sau đó customer
+                    got = _range_call_for_sources(fm_s, to_s)
+                    if not got:
+                        _split_customers_and_call(fm_s, to_s)
                 return
 
             # các mã khác → log & bỏ qua
