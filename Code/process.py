@@ -8,7 +8,9 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta  # pip install python-dateutil
 import os
 import glob
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import uuid
+import shutil
 file_name = 'output.xlsx'
 
 
@@ -37,6 +39,7 @@ def extract_records(payload):
     if isinstance(payload, list):
         return payload
     if isinstance(payload, dict):
+            # tìm danh sách phổ biến trong payload
         for k in ['data', 'items', 'results', 'rows', 'content', 'list', 'records']:
             v = payload.get(k)
             if isinstance(v, list):
@@ -70,12 +73,12 @@ def parse_json_safely(self, response):
 def onFuncButtonClick(self, MainWindown, optione1):
     """
     Cải tiến:
+    - Đa luồng (ThreadPoolExecutor) theo task batch×range
     - Batch theo customer (BATCH_SIZE)
-    - Chia 2 tháng/lần (range)
     - helper.fetch_window_adaptive: fallback range → source_code → customer
-    - Ghi CSV tạm per (batch, range), cuối cùng merge → Excel
+    - Mỗi thread chỉ ghi CSV tạm đặt tên duy nhất; cuối cùng merge → Excel
     """
-    update_message_status_box(self, "Calling API by 2-month windows + customer batches...")
+    update_message_status_box(self, "Calling API by 2-month windows + customer batches (multithread)...")
     response = None
     try:
         # read config
@@ -123,56 +126,66 @@ def onFuncButtonClick(self, MainWindown, optione1):
         update_message_status_box(self, f"Total windows: {len(ranges)}; customers: {len(customers_all)}")
 
         # Tham số điều chỉnh
-        BATCH_SIZE = 10  # thử 10 trước, có thể nâng lên 15–20 nếu ổn
+        MAX_WORKERS = 4  # thử 3–5 cho 1 office
+        BATCH_SIZE  = 10  # có thể nâng 15–20 nếu ổn
         source_codes = [s.get("source_code") for s in body.get("source_code", []) if s.get("source_code")] \
                        or ["MRI", "FRT", "MDM", "MDT", "MRD"]
-
-        # HTTP session dùng lại kết nối
-        from helper import build_session, fetch_window_adaptive
-        session = build_session()
 
         # folder tạm
         tmp_dir = "tmp"
         os.makedirs(tmp_dir, exist_ok=True)
 
-        # Xử lý theo batch customer
         office = self.officeCode.currentText()
+
+        # Chuẩn bị danh sách task: [(batch_no, range_no, batch_customers, (fm,to))]
+        tasks = []
         batch_no = 0
         for start_idx in range(0, len(customers_all), BATCH_SIZE):
             batch_no += 1
             batch_customers = customers_all[start_idx:start_idx + BATCH_SIZE]
-            update_message_status_box(self, f"Batch {batch_no}: {len(batch_customers)} customers")
+            for range_no, (fm, to) in enumerate(ranges, 1):
+                tasks.append((batch_no, range_no, batch_customers, (fm, to)))
 
-            range_no = 0
-            for (fm, to) in ranges:
-                range_no += 1
-                # Gọi theo cơ chế adaptive (range → source → customer)
-                rows = fetch_window_adaptive(
-                    self, session, base_url, headers, body,
-                    office=office,
-                    customers=batch_customers,
-                    fm=fm, to=to,
-                    source_codes=source_codes
+        update_message_status_box(self, f"Submitting {len(tasks)} tasks to thread pool ...")
+
+        # Worker: mỗi task mở Session riêng, headers/body cục bộ, gọi helper, ghi CSV tạm
+        from helper import build_session, fetch_window_adaptive
+
+        def worker(task):
+            bno, rno, batch_customers, (fm, to) = task
+            session = build_session()                 # Session riêng per-thread
+            headers_local = dict(headers)             # headers cục bộ
+            body_local    = dict(body)                # body cục bộ
+
+            rows = fetch_window_adaptive(
+                self, session, base_url, headers_local, body_local,
+                office=office,
+                customers=batch_customers,
+                fm=fm, to=to,
+                source_codes=source_codes
+            )
+            if rows:
+                df_tmp = pd.json_normalize(rows)
+                part_path = os.path.join(
+                    tmp_dir, f"{office}_b{bno}_r{rno}_{uuid.uuid4().hex[:8]}.csv"
                 )
-                # Ghi CSV tạm để giảm RAM
-                if rows:
-                    try:
-                        df_tmp = pd.json_normalize(rows)
-                        part_path = os.path.join(tmp_dir, f"{office}_b{batch_no}_r{range_no}.csv")
-                        df_tmp.to_csv(part_path, index=False)
-                        update_message_status_box(self, f"Saved part: {part_path} (+{len(df_tmp)})")
-                    except Exception as ex_csv:
-                        update_message_status_box(self, f"CSV write error: {ex_csv}")
+                df_tmp.to_csv(part_path, index=False)
+                return f"[OK] b{bno} r{rno} (+{len(df_tmp)}) -> {os.path.basename(part_path)}"
+            return f"[NO DATA] b{bno} r{rno}"
 
-                # Checkpoint
+        # Chạy thread pool
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+            futures = [ex.submit(worker, t) for t in tasks]
+            for fut in as_completed(futures):
                 try:
-                    with open(f"progress_{office}.json", "w", encoding="utf-8") as pf:
-                        json.dump({"office": office, "batch_no": batch_no, "range_no": range_no}, pf)
-                except Exception:
-                    pass
+                    msg = fut.result()
+                    update_message_status_box(self, msg)
+                except Exception as e:
+                    update_message_status_box(self, f"[ERR] {e}")
 
         # Merge các part CSV → DataFrame
-        files = sorted(glob.glob(os.path.join(tmp_dir, f"{office}_b*_r*.csv")))
+        files = sorted(glob.glob(os.path.join(tmp_dir, f"{office}_b*_r_*.csv"))) \
+                or sorted(glob.glob(os.path.join(tmp_dir, f"{office}_b*_r*.csv")))
         if not files:
             update_message_status_box(self, "No data overall (không có file tạm nào).")
             return
@@ -208,7 +221,12 @@ def onFuncButtonClick(self, MainWindown, optione1):
 
         # Cập nhật số lượng case
         setDataCount(self)
-
+        try:
+            shutil.rmtree(tmp_dir)     # xoá toàn bộ folder tmp
+            os.makedirs(tmp_dir, exist_ok=True)  # tạo lại trống nếu cần chạy lần sau
+            update_message_status_box(self, "🧹 Cleaned up tmp folder.")
+        except Exception as ex_clean:
+            update_message_status_box(self, f"⚠️ Cleanup failed: {ex_clean}")
     except Exception as e:
         msg = (getattr(response, "text", None)[:500] if response is not None and hasattr(response, "text") else str(e))
         update_message_status_box(self, f"Error (chunked): {msg}")
@@ -264,6 +282,8 @@ def setDataCount(self):
     self.split_manual_case_count.setText(str(result_count_of_case.get('split_case_manual', 0)))
     self.group_case_count.setText(str(result_count_of_case.get('group_case', 0)))
     self.supplement_case_count.setText(str(result_count_of_case.get('supplement_case', 0)))
+    # merge_case đang chỉ print ra console
+    # print(str(result_count_of_case.get('merge_case', 0)))
 
 def updateConfigSourceCode(self, config_file="config.json"):
     """

@@ -1,7 +1,10 @@
-import json, time
+import json, time, threading
 from datetime import datetime, timedelta
 import requests
 from util import update_message_status_box
+
+# ---- lock để tránh nhiều thread cùng refresh token/ghi config.json ----
+_TOKEN_LOCK = threading.Lock()
 
 # ---- thời gian ----
 def _p(s, fmt="%Y%m%d"): return datetime.strptime(s, fmt)
@@ -59,6 +62,8 @@ def fetch_window_adaptive(self, session, base_url, headers, base_body,
 
     def _call_once(body):
         try:
+            # có thể thêm sleep jitter nhẹ nếu bị rate limit:
+            time.sleep(0.05)
             resp = _post(session, base_url, headers, body)
             return resp, None
         except requests.RequestException as e:
@@ -177,16 +182,17 @@ def fetch_window_adaptive(self, session, base_url, headers, base_body,
                     # JSON hỏng → xem như body quá lớn
                     pass
 
-            # 401 → refresh token 1 lần rồi thử lại cùng range
+            # 401 → refresh token 1 lần rồi thử lại cùng range (có lock)
             if resp.status_code == 401 and depth < 2:
                 from getNewToken import updateConfigToken
-                updateConfigToken(self)
-                try:
-                    with open("config.json","r",encoding="utf-8") as f:
-                        cfg = json.load(f)
-                    headers.update(cfg.get("headers", {}))
-                except Exception:
-                    pass
+                with _TOKEN_LOCK:
+                    updateConfigToken(self)
+                    try:
+                        with open("config.json","r",encoding="utf-8") as f:
+                            cfg = json.load(f)
+                        headers.update(cfg.get("headers", {}))
+                    except Exception:
+                        pass
                 _do_range(fm_s, to_s, depth+1)
                 return
 

@@ -18,12 +18,9 @@ def saveNewExcel(self, dataframes, file_name, save_flag):
                     if sheet_name in writer.book.sheetnames:
                         # đọc sheet cũ
                         existing_df = pd.read_excel(file_name, sheet_name=sheet_name)
-                        # gộp dữ liệu cũ + mới
+                        # gộp dữ liệu cũ + mới (lọc DF rỗng/toàn NaN để tránh FutureWarning)
                         frames = [d for d in [existing_df, df] if not d.empty and not d.isna().all().all()]
-                        if frames:
-                            updated_df = pd.concat(frames, ignore_index=True)
-                        else:
-                            updated_df = pd.DataFrame()  # blank if not exist
+                        updated_df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
                         updated_df.to_excel(writer, sheet_name=sheet_name, index=False)
                         update_message_status_box(self, f"Appended data to '{sheet_name}'")
                     else:
@@ -42,4 +39,3 @@ def saveNewExcel(self, dataframes, file_name, save_flag):
         update_message_status_box(self, f"⚠️ Cannot write to {file_name}. File may be open or no permission.")
     except Exception as e:
         update_message_status_box(self, f"⚠️ Error saving Excel: {e}")
-    
