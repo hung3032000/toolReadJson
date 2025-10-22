@@ -1,4 +1,3 @@
-import requests
 import pandas as pd
 from processCaseInBrim import *
 from saveNewExcel import *
@@ -12,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import uuid
 import shutil
 file_name = 'output.xlsx'
-
+import time
 
 # ===================== helpers =====================
 
@@ -47,27 +46,6 @@ def extract_records(payload):
         return [payload]
     return []
 
-def parse_json_safely(self, response):
-    """
-    Trả về object JSON (dict/list) nếu parse được; nếu không:
-    - log 200 ký tự đầu để soi
-    - ghi ra file last_response_bad.json
-    - trả về None (bỏ qua window này)
-    """
-    try:
-        return response.json()
-    except ValueError as e:
-        raw = (getattr(response, "text", "") or "").strip()
-        update_message_status_box(self, f"Response is not valid JSON: {e}")
-        update_message_status_box(self, f"Preview: {raw[:200]}")
-        try:
-            with open("last_response_bad.json", "w", encoding="utf-8") as f:
-                f.write(raw)
-        except Exception:
-            pass
-        return None
-
-
 # ===================== main flow =====================
 
 def onFuncButtonClick(self, MainWindown, optione1):
@@ -78,6 +56,8 @@ def onFuncButtonClick(self, MainWindown, optione1):
     - helper.fetch_window_adaptive: fallback range → source_code → customer
     - Mỗi thread chỉ ghi CSV tạm đặt tên duy nhất; cuối cùng merge → Excel
     """
+    start_time = time.time()
+    update_message_status_box(self, "⏳ Start processing ...")
     update_message_status_box(self, "Calling API by 2-month windows + customer batches (multithread)...")
     response = None
     try:
@@ -227,6 +207,11 @@ def onFuncButtonClick(self, MainWindown, optione1):
             update_message_status_box(self, "🧹 Cleaned up tmp folder.")
         except Exception as ex_clean:
             update_message_status_box(self, f"⚠️ Cleanup failed: {ex_clean}")
+        
+        end_time = time.time()
+        elapsed = end_time - start_time
+        mins, secs = divmod(elapsed, 60)
+        update_message_status_box(self, f"✅ Done all. Total time: {int(mins)} min {secs:.1f} sec.")
     except Exception as e:
         msg = (getattr(response, "text", None)[:500] if response is not None and hasattr(response, "text") else str(e))
         update_message_status_box(self, f"Error (chunked): {msg}")
