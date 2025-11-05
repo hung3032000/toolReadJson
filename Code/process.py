@@ -92,13 +92,17 @@ def onFuncButtonClick(self, MainWindown, optione1):
         to_date   = body.get("to_inv_issue_date")
         if not (from_date and to_date):
             update_message_status_box(self, "Vui lòng nhập đủ from/to date (YYYYMMDD).")
+            end_time = time.time()
+            count_time(self, end_time, start_time)
             return
-
+        ofc_cd = body.get("ofc_cd")
         # Lấy danh sách customer theo office
         cust_cd_list = update_config_cust_cd(self) or []
         customers_all = [c.get("cust_cd") for c in cust_cd_list if c.get("cust_cd")]
         if not customers_all:
             update_message_status_box(self, "Không có customer nào để xử lý (file office .txt rỗng?).")
+            end_time = time.time()
+            count_time(self, end_time, start_time)
             return
 
         # Ranges theo 2 tháng
@@ -162,12 +166,16 @@ def onFuncButtonClick(self, MainWindown, optione1):
                     update_message_status_box(self, msg)
                 except Exception as e:
                     update_message_status_box(self, f"[ERR] {e}")
+                    clear_temp_file(self)
+                    
 
         # Merge các part CSV → DataFrame
         files = sorted(glob.glob(os.path.join(tmp_dir, f"{office}_b*_r_*.csv"))) \
                 or sorted(glob.glob(os.path.join(tmp_dir, f"{office}_b*_r*.csv")))
         if not files:
             update_message_status_box(self, "No data overall (không có file tạm nào).")
+            end_time = time.time()
+            count_time(self, end_time, start_time)
             return
 
         update_message_status_box(self, f"Merging {len(files)} parts ...")
@@ -175,6 +183,9 @@ def onFuncButtonClick(self, MainWindown, optione1):
             df_all = pd.concat((pd.read_csv(p) for p in files), ignore_index=True)
         except Exception as ex_merge:
             update_message_status_box(self, f"Merge CSV error: {ex_merge}")
+            end_time = time.time()
+            count_time(self, end_time, start_time)
+            clear_temp_file(self)
             return
 
         # Đưa về pipeline sẵn có: xuất Excel tạm rồi chạy processCaseInBrim
@@ -184,6 +195,9 @@ def onFuncButtonClick(self, MainWindown, optione1):
             update_message_status_box(self, f"Excel file has been created: {excelFilePatch}")
         except Exception as ex_x:
             update_message_status_box(self, f"Write Excel error: {ex_x}")
+            end_time = time.time()
+            count_time(self, end_time, start_time)
+            clear_temp_file(self)
             return
 
         # Đọc lại + phân loại case
@@ -193,7 +207,9 @@ def onFuncButtonClick(self, MainWindown, optione1):
 
         # Lưu kết quả cuối
         if optione1:
-            saveNewExcel(self, data_after_process, file_name, 1)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_name2 = f"output_{ofc_cd}_{ts}.xlsx"
+            saveNewExcel(self, data_after_process, file_name2, 1)
             update_message_status_box(self, "Done Save And Replace Excel")
         else:
             saveNewExcel(self, data_after_process, file_name, 0)
@@ -202,20 +218,19 @@ def onFuncButtonClick(self, MainWindown, optione1):
         # Cập nhật số lượng case
         setDataCount(self)
         try:
-            shutil.rmtree(tmp_dir)     # xoá toàn bộ folder tmp
-            os.makedirs(tmp_dir, exist_ok=True)  # tạo lại trống nếu cần chạy lần sau
-            update_message_status_box(self, "🧹 Cleaned up tmp folder.")
+            clear_temp_file(self)
         except Exception as ex_clean:
+            end_time = time.time()
+            count_time(self, end_time, start_time)
             update_message_status_box(self, f"⚠️ Cleanup failed: {ex_clean}")
         
         end_time = time.time()
-        elapsed = end_time - start_time
-        mins, secs = divmod(elapsed, 60)
-        update_message_status_box(self, f"✅ Done all. Total time: {int(mins)} min {secs:.1f} sec.")
+        count_time(self, end_time, start_time)
     except Exception as e:
         msg = (getattr(response, "text", None)[:500] if response is not None and hasattr(response, "text") else str(e))
         update_message_status_box(self, f"Error (chunked): {msg}")
-
+    finally:
+        clear_temp_file(self)
 
 def saveExcel(self, json_data):
     print("save Excel option:")
@@ -250,8 +265,7 @@ def saveDataFromJsonToExcel(self, json_data):
     if not records:
         update_message_status_box(self, "Warning: no records to write.")
     data = pd.json_normalize(records)
-    name = 'dataFromJsonToExcel'
-    excel_file_path = name + '.xlsx'
+    excel_file_path = 'dataFromJsonToExcel.xlsx'
     data.to_excel(excel_file_path, index=False, engine='openpyxl')
     update_message_status_box(self, f"Excel file has been created: {excel_file_path}")
     return excel_file_path
@@ -282,7 +296,7 @@ def updateConfigSourceCode(self, config_file="config.json"):
         with open("config.json", "r", encoding="utf-8") as f:
             config_data = json.load(f)
 
-        with open(office+'.txt', "r", encoding="utf-8") as f:
+        with open('ofc_cd/'+office+'.txt', "r", encoding="utf-8") as f:
             lines = f.readlines()
         cust_codes = [line.strip() for line in lines if line.strip()]
         cust_cd_list = [{"cust_cd": code} for code in cust_codes]
@@ -315,7 +329,7 @@ def updateConfigSourceCode(self, config_file="config.json"):
 def update_config_cust_cd(self, config_file="config.json"):
     try:
         office = self.officeCode.currentText()
-        with open(office+'.txt', "r", encoding="utf-8") as f:
+        with open('ofc_cd/'+office+'.txt', "r", encoding="utf-8") as f:
             lines = f.readlines()
         cust_codes = [line.strip() for line in lines if line.strip()]
         cust_cd_list = [{"cust_cd": code} for code in cust_codes]
@@ -323,3 +337,14 @@ def update_config_cust_cd(self, config_file="config.json"):
     except Exception as e:
         print("Error updating config cust_cd:", str(e))
         return None
+
+
+def count_time(self, end_time, start_time):
+    elapsed = end_time - start_time
+    mins, secs = divmod(elapsed, 60)
+    update_message_status_box(self, f"✅ Done all. Total time: {int(mins)} min {secs:.1f} sec.")
+    
+def clear_temp_file(self):
+    shutil.rmtree("tmp")     # xoá toàn bộ folder tmp
+    os.makedirs("tmp", exist_ok=True)  # tạo lại trống nếu cần chạy lần sau
+    update_message_status_box(self, "🧹 Cleaned up tmp folder.")
