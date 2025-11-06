@@ -12,7 +12,9 @@ import uuid
 import shutil
 file_name = 'output.xlsx'
 import time
-
+import os, shutil, time, threading
+import polars as pl
+from helper import build_session, fetch_window_adaptive
 # ===================== helpers =====================
 
 def _parse_yyyymmdd(s: str) -> datetime:
@@ -97,7 +99,7 @@ def onFuncButtonClick(self, MainWindown, optione1):
             return
         ofc_cd = body.get("ofc_cd")
         # Lấy danh sách customer theo office
-        cust_cd_list = update_config_cust_cd(self) or []
+        cust_cd_list = update_config_cust_cd(self, env) or []
         customers_all = [c.get("cust_cd") for c in cust_cd_list if c.get("cust_cd")]
         if not customers_all:
             update_message_status_box(self, "Không có customer nào để xử lý (file office .txt rỗng?).")
@@ -133,7 +135,7 @@ def onFuncButtonClick(self, MainWindown, optione1):
         update_message_status_box(self, f"Submitting {len(tasks)} tasks to thread pool ...")
 
         # Worker: mỗi task mở Session riêng, headers/body cục bộ, gọi helper, ghi CSV tạm
-        from helper import build_session, fetch_window_adaptive
+
 
         def worker(task):
             bno, rno, batch_customers, (fm, to) = task
@@ -150,11 +152,19 @@ def onFuncButtonClick(self, MainWindown, optione1):
             )
             if rows:
                 df_tmp = pd.json_normalize(rows)
-                part_path = os.path.join(
-                    tmp_dir, f"{office}_b{bno}_r{rno}_{uuid.uuid4().hex[:8]}.csv"
-                )
-                df_tmp.to_csv(part_path, index=False)
-                return f"[OK] b{bno} r{rno} (+{len(df_tmp)}) -> {os.path.basename(part_path)}"
+                
+                # Ưu tiên ghi Parquet (nhanh/nhẹ), fallback CSV nếu thiếu dependency
+                try:
+                    pq_path = os.path.join(tmp_dir, f"{office}_b{bno}_r{rno}_{uuid.uuid4().hex[:8]}.parquet")
+                    df_tmp.to_parquet(pq_path, index=False, engine="pyarrow", compression="zstd")
+                    return f"[OK] b{bno} r{rno} (+{len(df_tmp)}) -> {os.path.basename(pq_path)}"
+                except Exception:
+                    part_path = os.path.join(tmp_dir, f"{office}_b{bno}_r{rno}_{uuid.uuid4().hex[:8]}.csv")
+                    df_tmp.to_csv(part_path, index=False)
+                    return f"[OK] b{bno} r{rno} (+{len(df_tmp)}) -> {os.path.basename(part_path)}"
+                except Exception:
+                    df_tmp.to_csv(part_path, index=False)
+                    return f"[OK/CSV] b{bno} r{rno} (+{len(df_tmp)}) -> {os.path.basename(part_path)}"
             return f"[NO DATA] b{bno} r{rno}"
 
         # Chạy thread pool
@@ -169,46 +179,86 @@ def onFuncButtonClick(self, MainWindown, optione1):
                     clear_temp_file(self)
                     
 
-        # Merge các part CSV → DataFrame
-        files = sorted(glob.glob(os.path.join(tmp_dir, f"{office}_b*_r_*.csv"))) \
-                or sorted(glob.glob(os.path.join(tmp_dir, f"{office}_b*_r*.csv")))
-        if not files:
-            update_message_status_box(self, "No data overall (không có file tạm nào).")
-            end_time = time.time()
-            count_time(self, end_time, start_time)
-            return
+        
+        # === Merge parts nhanh & tiết kiệm RAM ===
+        def _merge_parts_fast(tmp_dir, office):
+            parquet_files = sorted(glob.glob(os.path.join(tmp_dir, f"{office}_b*_r*.parquet")))
+            csv_files = sorted(glob.glob(os.path.join(tmp_dir, f"{office}_b*_r_*.csv"))) or sorted(glob.glob(os.path.join(tmp_dir, f"{office}_b*_r*.csv")))
 
-        update_message_status_box(self, f"Merging {len(files)} parts ...")
-        try:
-            df_all = pd.concat((pd.read_csv(p) for p in files), ignore_index=True)
-        except Exception as ex_merge:
-            update_message_status_box(self, f"Merge CSV error: {ex_merge}")
+            # Ưu tiên Parquet + Polars
+            if parquet_files:
+                try:
+                    with pl.StringCache():
+                        lf = pl.scan_parquet(parquet_files)
+                        df_polars = lf.collect(streaming=True)
+                        return df_polars.to_pandas(use_pyarrow_extension_array=True)
+                except Exception:
+                    pass
+                try:
+                    return pd.concat([pd.read_parquet(p) for p in parquet_files], ignore_index=True, copy=False)
+                except Exception as e:
+                    update_message_status_box(self, f"Fallback read_parquet failed: {e}")
+
+            # CSV path
+            if csv_files:
+                # Thử Polars CSV
+                try:
+
+                    with pl.StringCache():
+                        lf = pl.scan_csv(csv_files, has_header=True, infer_schema_length=2000)
+                        df_polars = lf.collect()
+                        return df_polars.to_pandas(use_pyarrow_extension_array=True)
+                except Exception:
+                    pass
+                # pandas + pyarrow
+                def _read_csv(path):
+                    try:
+                        return pd.read_csv(path, engine="pyarrow")
+                    except Exception:
+                        return pd.read_csv(path)
+                # Nếu quá nhiều file nhỏ, nối text → đọc 1 lần
+                if len(csv_files) >= 80:
+                    merged_path = os.path.join(tmp_dir, f"{office}__merged.csv")
+                    try:
+                        with open(merged_path, "w", encoding="utf-8", newline="") as w:
+                            for i,p in enumerate(csv_files):
+                                with open(p, "r", encoding="utf-8", newline="") as r:
+                                    if i == 0:
+                                        w.write(r.read())
+                                    else:
+                                        r.readline(); w.writelines(r.readlines())
+                        df = _read_csv(merged_path)
+                        try: os.remove(merged_path)
+                        except Exception: pass
+                        return df
+                    except Exception as e:
+                        update_message_status_box(self, f"Concat-text failed, fallback concat: {e}")
+                # Bình thường: concat generator
+                return pd.concat((_read_csv(p) for p in csv_files), ignore_index=True, copy=False)
+
+            return None
+
+        update_message_status_box(self, f"Merging parts in {tmp_dir} ...")
+        df_all = _merge_parts_fast(tmp_dir, office)
+        if df_all is None or df_all.empty:
+            update_message_status_box(self, "No data overall sau khi merge.")
             end_time = time.time()
             count_time(self, end_time, start_time)
             clear_temp_file(self)
             return
-
-        # Đưa về pipeline sẵn có: xuất Excel tạm rồi chạy processCaseInBrim
-        excelFilePatch = "dataFromJsonToExcel.xlsx"
+# Đưa về pipeline sẵn có: xuất Excel tạm rồi chạy processCaseInBrim
+        
+        # Phân loại case trực tiếp không ghi/đọc Excel trung gian
         try:
-            df_all.to_excel(excelFilePatch, index=False, engine='openpyxl')
-            update_message_status_box(self, f"Excel file has been created: {excelFilePatch}")
-        except Exception as ex_x:
-            update_message_status_box(self, f"Write Excel error: {ex_x}")
-            end_time = time.time()
-            count_time(self, end_time, start_time)
-            clear_temp_file(self)
-            return
-
-        # Đọc lại + phân loại case
-        data_raw = readFileExcel(excelFilePatch)
-        data_after_process = processDataRawToRealData(data_raw)
-        update_message_status_box(self, "Done processing data")
-
-        # Lưu kết quả cuối
+            data_after_process = processDataRawToRealData(df_all)
+            update_message_status_box(self, "Done processing data")
+        except Exception as ex_proc:
+            update_message_status_box(self, f"Process data error: {ex_proc}")
+            end_time = time.time(); count_time(self, end_time, start_time); clear_temp_file(self); return
+# Lưu kết quả cuối
         if optione1:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            file_name2 = f"output_{ofc_cd}_{ts}.xlsx"
+            file_name2 = f"output_{ofc_cd}_{env}_{ts}.xlsx"
             saveNewExcel(self, data_after_process, file_name2, 1)
             update_message_status_box(self, "Done Save And Replace Excel")
         else:
@@ -216,14 +266,7 @@ def onFuncButtonClick(self, MainWindown, optione1):
             update_message_status_box(self, "Done Save Excel File")
 
         # Cập nhật số lượng case
-        setDataCount(self)
-        try:
-            clear_temp_file(self)
-        except Exception as ex_clean:
-            end_time = time.time()
-            count_time(self, end_time, start_time)
-            update_message_status_box(self, f"⚠️ Cleanup failed: {ex_clean}")
-        
+        setDataCount(self) 
         end_time = time.time()
         count_time(self, end_time, start_time)
     except Exception as e:
@@ -284,7 +327,7 @@ def setDataCount(self):
     # merge_case đang chỉ print ra console
     # print(str(result_count_of_case.get('merge_case', 0)))
 
-def updateConfigSourceCode(self, config_file="config.json"):
+def updateConfigSourceCode(self ,config_file="config.json"):
     """
     Read config.json, Update 'source_code' in body base on checkbox,
     and save into file. Return config_data if success, else None.
@@ -293,10 +336,10 @@ def updateConfigSourceCode(self, config_file="config.json"):
         office = self.officeCode.currentText()
         from_date = self.fromDate.text().strip()
         to_date = self.toDtae.text().strip()
+        env = self.envCombobox.currentText().lower().strip()
         with open("config.json", "r", encoding="utf-8") as f:
             config_data = json.load(f)
-
-        with open('ofc_cd/'+office+'.txt', "r", encoding="utf-8") as f:
+        with open(f'ofc_cd/{env}/' +office+'.txt', "r", encoding="utf-8") as f:
             lines = f.readlines()
         cust_codes = [line.strip() for line in lines if line.strip()]
         cust_cd_list = [{"cust_cd": code} for code in cust_codes]
@@ -329,7 +372,8 @@ def updateConfigSourceCode(self, config_file="config.json"):
 def update_config_cust_cd(self, config_file="config.json"):
     try:
         office = self.officeCode.currentText()
-        with open('ofc_cd/'+office+'.txt', "r", encoding="utf-8") as f:
+        env = self.envCombobox.currentText().lower().strip()
+        with open(f'ofc_cd/{env}/'+office+'.txt', "r", encoding="utf-8") as f:
             lines = f.readlines()
         cust_codes = [line.strip() for line in lines if line.strip()]
         cust_cd_list = [{"cust_cd": code} for code in cust_codes]
@@ -344,7 +388,39 @@ def count_time(self, end_time, start_time):
     mins, secs = divmod(elapsed, 60)
     update_message_status_box(self, f"✅ Done all. Total time: {int(mins)} min {secs:.1f} sec.")
     
-def clear_temp_file(self):
-    shutil.rmtree("tmp")     # xoá toàn bộ folder tmp
-    os.makedirs("tmp", exist_ok=True)  # tạo lại trống nếu cần chạy lần sau
-    update_message_status_box(self, "🧹 Cleaned up tmp folder.")
+
+
+def clear_temp_file(self, tmp_dir="tmp"):
+    start = time.time()
+
+    # Nếu folder chưa tồn tại → tạo luôn, không làm gì thêm
+    if not os.path.exists(tmp_dir):
+        os.makedirs(tmp_dir, exist_ok=True)
+        update_message_status_box(self, "🧹 tmp folder created (was missing).")
+        return
+
+    # Đổi tên trước khi xoá để tránh lock & không chặn tiến trình khác
+    tmp_old = f"{tmp_dir}__delete_me"
+    try:
+        if os.path.exists(tmp_old):
+            shutil.rmtree(tmp_old, ignore_errors=True)
+        os.rename(tmp_dir, tmp_old)
+    except Exception as e:
+        update_message_status_box(self, f"⚠️ Rename tmp failed: {e}")
+        tmp_old = tmp_dir  # fallback: xoá trực tiếp
+
+    # Xoá nền để không chặn giao diện/UI
+    def _delete_bg(path):
+        try:
+            shutil.rmtree(path, ignore_errors=True)
+        except Exception:
+            pass
+
+    threading.Thread(target=_delete_bg, args=(tmp_old,), daemon=True).start()
+
+    # Tạo lại thư mục mới rỗng
+    os.makedirs(tmp_dir, exist_ok=True)
+
+    elapsed = time.time() - start
+    update_message_status_box(self, f"🧹 Cleaned up tmp folder in {elapsed:.2f}s (async delete).")
+
