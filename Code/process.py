@@ -59,6 +59,7 @@ def onFuncButtonClick(self, MainWindown, optione1):
     - Mỗi thread chỉ ghi CSV tạm đặt tên duy nhất; cuối cùng merge → Excel
     """
     start_time = time.time()
+    setDefaultDataCount(self)
     update_message_status_box(self, "⏳ Start processing ...")
     update_message_status_box(self, "Calling API by 2-month windows + customer batches (multithread)...")
     response = None
@@ -266,7 +267,7 @@ def onFuncButtonClick(self, MainWindown, optione1):
             update_message_status_box(self, "Done Save Excel File")
 
         # Cập nhật số lượng case
-        setDataCount(self) 
+        setDataCount(self)
         end_time = time.time()
         count_time(self, end_time, start_time)
     except Exception as e:
@@ -326,6 +327,13 @@ def setDataCount(self):
     self.supplement_case_count.setText(str(result_count_of_case.get('supplement_case', 0)))
     # merge_case đang chỉ print ra console
     # print(str(result_count_of_case.get('merge_case', 0)))
+
+def setDefaultDataCount(self):
+    self.single_case_count.setText('0')
+    self.split_case_count.setText('0')
+    self.split_manual_case_count.setText('0')
+    self.group_case_count.setText('0')
+    self.supplement_case_count.setText('0')
 
 def updateConfigSourceCode(self ,config_file="config.json"):
     """
