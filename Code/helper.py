@@ -190,7 +190,14 @@ def fetch_window_adaptive(self, session, base_url, headers, base_body,
                     try:
                         with open("config.json","r",encoding="utf-8") as f:
                             cfg = json.load(f)
-                        headers.update(cfg.get("headers", {}))
+                        merged = dict(cfg.get("headers", {}) or {})
+                        try:
+                            from secret_provider import apply_secrets_to_headers
+                            env = (self.envCombobox.currentText() if hasattr(self, "envCombobox") else "TEST").strip().upper()
+                            merged = apply_secrets_to_headers(cfg, env, merged)
+                        except Exception:
+                            pass
+                        headers.update(merged)
                     except Exception:
                         pass
                 _do_range(fm_s, to_s, depth+1)

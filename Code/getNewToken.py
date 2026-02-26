@@ -1,60 +1,96 @@
-import json
-import requests
 import base64
+import json
+
+import requests
+
 from util import update_message_status_box
-with open("config.json", "r", encoding="utf-8") as f:
-    config_data = json.load(f)
-API_HOME_TEST = config_data["envData"].get("API_HOME_TEST", {})
-API_HOME_STG = config_data["envData"].get("API_HOME_STG", {})
-URL = config_data["envData"].get("URL", {})
-def get_new_token(self):
-    env = self.envCombobox.currentText().strip()
-    api_home = API_HOME_STG if env == "STG" else API_HOME_TEST
-    token_path = URL  # nên là path string, ví dụ "/oauth/token"
-    if not isinstance(api_home, str) or not isinstance(token_path, str):
-        update_message_status_box(self, "Config URL/host không hợp lệ (không phải string).")
-        return
+
+
+def _read_cfg(config_file="config.json"):
+    with open(config_file, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _write_cfg(cfg, config_file="config.json"):
+    with open(config_file, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=4)
+
+
+def _resolve_bundle(cfg, env):
+    try:
+        from secret_provider import resolve_secret_bundle
+
+        return resolve_secret_bundle(cfg, env)
+    except Exception:
+        return {
+            "bearertoken": cfg.get("bearertoken", {}) or {},
+            "headers": cfg.get("headers", {}) or {},
+        }
+
+
+def get_new_token(self, config_file="config.json"):
+    cfg = _read_cfg(config_file)
+    env = (self.envCombobox.currentText() if hasattr(self, "envCombobox") else "TEST").strip().upper()
+
+    api_home_test = cfg.get("envData", {}).get("API_HOME_TEST", "")
+    api_home_stg = cfg.get("envData", {}).get("API_HOME_STG", "")
+    token_path = cfg.get("envData", {}).get("URL", "")
+    api_home = api_home_stg if env == "STG" else api_home_test
+    if not isinstance(api_home, str) or not isinstance(token_path, str) or not api_home or not token_path:
+        update_message_status_box(self, "Config URL/host is invalid.")
+        return None
 
     url = api_home + token_path
-    credentials = config_data.get("bearertoken", {})
-    username = credentials.get("username", "")
-    password = credentials.get("password", "")
+    bundle = _resolve_bundle(cfg, env)
+    bearer_cfg = bundle.get("bearertoken", {}) or {}
+
+    username = bearer_cfg.get("username", "")
+    password = bearer_cfg.get("password", "")
+    if not username or not password:
+        update_message_status_box(self, "Bearer username/password is missing.")
+        return None
 
     basic_auth_str = f"{username}:{password}"
     encoded_auth = base64.b64encode(basic_auth_str.encode("utf-8")).decode("utf-8")
-    config_data["bearertoken"]["Authorization"] = f"Basic {encoded_auth}"
 
-    with open("config.json", "w", encoding="utf-8") as f:
-        json.dump(config_data, f, indent=4)
+    token_headers = {
+        "Authorization": f"Basic {encoded_auth}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if bearer_cfg.get("apikey"):
+        token_headers["apikey"] = bearer_cfg["apikey"]
 
     response = None
     try:
-        response = requests.post(url, headers=config_data["bearertoken"])
+        response = requests.post(url, headers=token_headers)
         if response.status_code == 200:
             token_data = response.json()
             token = token_data.get("access_token") or token_data.get("token")
             if not token:
                 raise Exception("Token not found in response")
-            update_message_status_box(self, f"New token is: {token}")
+            update_message_status_box(self, "Token refreshed successfully")
             return token
-        else:
-            update_message_status_box(self, f"Token request failed [{response.status_code}]: {response.text[:500]}")
-            raise Exception(f"Token request failed {response.status_code}")
+        update_message_status_box(self, f"Token request failed [{response.status_code}]: {response.text[:300]}")
+        raise Exception(f"Token request failed {response.status_code}")
     except Exception as e:
-        msg = response.text[:500] if response else str(e)
+        msg = response.text[:300] if response is not None else str(e)
         update_message_status_box(self, f"Error getting token: {msg}")
         raise
 
+
 def updateConfigToken(self, config_file="config.json"):
     try:
-        new_token = get_new_token(self)
+        new_token = get_new_token(self, config_file=config_file)
         if not new_token:
             return None
-        config_data["headers"]["Authorization"] = f"Bearer {new_token}"
-        with open(config_file, "w", encoding="utf-8") as f:
-            json.dump(config_data, f, indent=4)
+        cfg = _read_cfg(config_file)
+        cfg.setdefault("headers", {})
+        cfg["headers"]["Authorization"] = f"Bearer {new_token}"
+        _write_cfg(cfg, config_file=config_file)
         update_message_status_box(self, "Token updated successfully")
-        return config_data
+        return cfg
     except Exception as e:
         update_message_status_box(self, f"Error updating token: {str(e)}")
         return None
+

@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>toolReadJson Web</title>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --panel: #ffffff;
+      --ink: #152238;
+      --muted: #68758c;
+      --line: #dbe2ef;
+      --accent: #0d66ff;
+      --accent-soft: #e7f0ff;
+      --ok: #0f9d58;
+      --warn: #c97a00;
+      --err: #d93025;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+      color: var(--ink);
+      background: radial-gradient(circle at 0 0, #dbe8ff 0%, #f4f6fb 40%, #f4f6fb 100%);
+    }
+    .shell {
+      max-width: 1280px;
+      margin: 24px auto;
+      padding: 0 16px;
+    }
+    .hero {
+      background: linear-gradient(120deg, #ffffff 0%, #f6faff 100%);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 20px 22px;
+      box-shadow: 0 12px 28px rgba(17, 34, 68, 0.06);
+    }
+    .hero h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0.2px;
+    }
+    .hero p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 9px 14px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      border-color: #b8d2ff;
+      background: var(--accent-soft);
+      color: #0948b3;
+      font-weight: 600;
+    }
+    .panel {
+      display: none;
+      margin-top: 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 6px 18px rgba(20, 36, 68, 0.04);
+    }
+    .panel.active { display: block; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 12px; color: var(--muted); }
+    input, select, button {
+      font: inherit;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #fff;
+      color: var(--ink);
+    }
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .sources {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #fcfdff;
+    }
+    .card .k {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .card .v {
+      margin-top: 4px;
+      font-size: 18px;
+      font-weight: 700;
+    }
+    .status-pill {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #eef2fb;
+      color: #244269;
+    }
+    .status-running { background: #ecf4ff; color: #0a4fba; }
+    .status-succeeded { background: #eaf8ef; color: #0f7d45; }
+    .status-failed { background: #fdeceb; color: #b32821; }
+    .logs {
+      margin-top: 10px;
+      background: #0f1727;
+      color: #dbe6ff;
+      border-radius: 12px;
+      min-height: 260px;
+      max-height: 360px;
+      overflow: auto;
+      padding: 12px;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f8fbff; position: sticky; top: 0; }
+    .table-wrap {
+      max-height: 460px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+    .muted { color: var(--muted); font-size: 12px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="hero">
+      <h1>toolReadJson Web Console</h1>
+      <p>Web-first workflow: run async job, monitor progress, inspect case results, and download output optionally.</p>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="run">Run Job</button>
+        <button class="tab-btn" data-tab="progress">Progress</button>
+        <button class="tab-btn" data-tab="results">Results</button>
+        <button class="tab-btn" data-tab="history">History</button>
+      </div>
+    </div>
+
+    <section class="panel active" id="tab-run">
+      <form id="run-form">
+        <div class="grid">
+          <div class="field">
+            <label>Environment</label>
+            <select id="env"></select>
+          </div>
+          <div class="field">
+            <label>Office</label>
+            <select id="office"></select>
+          </div>
+          <div class="field">
+            <label>From Date (YYYYMMDD)</label>
+            <input id="from-date" value="20240901" />
+          </div>
+          <div class="field">
+            <label>To Date (YYYYMMDD)</label>
+            <input id="to-date" value="20260201" />
+          </div>
+          <div class="field">
+            <label>Save Mode</label>
+            <select id="save-mode">
+              <option value="replace">replace</option>
+              <option value="append">append</option>
+            </select>
+          </div>
+          <div class="field">
+            <button class="primary" type="submit">Start Job</button>
+          </div>
+        </div>
+        <div class="field" style="margin-top:12px;">
+          <label>Source Types</label>
+          <div class="sources">
+            <label><input type="checkbox" value="FRT" checked /> FRT</label>
+            <label><input type="checkbox" value="MRI" checked /> MRI</label>
+            <label><input type="checkbox" value="DMT" checked /> DMT</label>
+            <label><input type="checkbox" value="TBP" checked /> TBP</label>
+          </div>
+        </div>
+      </form>
+      <p class="muted" id="run-msg">Ready.</p>
+    </section>
+
+    <section class="panel" id="tab-progress">
+      <div class="actions">
+        <span id="job-status" class="status-pill">idle</span>
+        <span class="muted">Active Job: <b id="active-job-id">none</b></span>
+      </div>
+      <div class="metrics">
+        <div class="card"><div class="k">Tasks</div><div class="v" id="m-tasks">0 / 0</div></div>
+        <div class="card"><div class="k">Units</div><div class="v" id="m-units">0 / 0</div></div>
+        <div class="card"><div class="k">P95 Latency</div><div class="v" id="m-p95">0 ms</div></div>
+        <div class="card"><div class="k">Error Rate</div><div class="v" id="m-err">0%</div></div>
+      </div>
+      <div class="logs" id="logs"></div>
+    </section>
+
+    <section class="panel" id="tab-results">
+      <div class="toolbar">
+        <select id="sheet"></select>
+        <select id="search-field">
+          <option value="INV_NO">INV_NO</option>
+          <option value="ZZ_IF_ID">ZZ_IF_ID</option>
+        </select>
+        <input id="search-text" placeholder="Quick search..." />
+        <button id="btn-search">Search</button>
+        <button id="btn-refresh-sheets">Reload Sheets</button>
+        <button id="btn-download">Download Output</button>
+      </div>
+      <p class="muted" id="results-msg">No data loaded.</p>
+      <div class="table-wrap">
+        <table id="results-table"></table>
+      </div>
+      <div class="toolbar" style="margin-top:8px;">
+        <button id="btn-prev">Prev</button>
+        <span class="muted" id="page-label">page 1</span>
+        <button id="btn-next">Next</button>
+      </div>
+    </section>
+
+    <section class="panel" id="tab-history">
+      <div class="toolbar">
+        <button id="btn-history">Refresh History</button>
+      </div>
+      <div class="table-wrap">
+        <table id="history-table"></table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const tabs = document.querySelectorAll(".tab-btn");
+    const panels = {
+      run: document.getElementById("tab-run"),
+      progress: document.getElementById("tab-progress"),
+      results: document.getElementById("tab-results"),
+      history: document.getElementById("tab-history")
+    };
+    tabs.forEach(btn => {
+      btn.addEventListener("click", () => {
+        tabs.forEach(x => x.classList.remove("active"));
+        btn.classList.add("active");
+        Object.values(panels).forEach(p => p.classList.remove("active"));
+        panels[btn.dataset.tab].classList.add("active");
+      });
+    });
+
+    const state = {
+      activeJobId: null,
+      logOffset: 0,
+      pollHandle: null,
+      page: 1,
+      pageSize: 100
+    };
+
+    async function api(path, opts = {}) {
+      const res = await fetch(path, {
+        headers: { "Content-Type": "application/json" },
+        ...opts
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(body || `HTTP ${res.status}`);
+      }
+      return res.json();
+    }
+
+    function setStatusPill(status) {
+      const el = document.getElementById("job-status");
+      el.textContent = status;
+      el.className = "status-pill";
+      if (status === "running") el.classList.add("status-running");
+      if (status === "succeeded") el.classList.add("status-succeeded");
+      if (status === "failed") el.classList.add("status-failed");
+    }
+
+    function selectedSources() {
+      return [...document.querySelectorAll(".sources input:checked")].map(x => x.value);
+    }
+
+    async function loadMeta() {
+      const data = await api("/api/v1/meta/options");
+      const envSel = document.getElementById("env");
+      envSel.innerHTML = data.envs.map(x => `<option value="${x}">${x}</option>`).join("");
+      function renderOffice() {
+        const env = envSel.value;
+        const offices = data.offices[env] || [];
+        document.getElementById("office").innerHTML = offices.map(x => `<option value="${x}">${x}</option>`).join("");
+      }
+      envSel.addEventListener("change", renderOffice);
+      renderOffice();
+    }
+
+    async function startJob(evt) {
+      evt.preventDefault();
+      const payload = {
+        env: document.getElementById("env").value,
+        office_code: document.getElementById("office").value,
+        from_date: document.getElementById("from-date").value.trim(),
+        to_date: document.getElementById("to-date").value.trim(),
+        source_types: selectedSources(),
+        save_mode: document.getElementById("save-mode").value
+      };
+      const runMsg = document.getElementById("run-msg");
+      runMsg.textContent = "Submitting job...";
+      try {
+        const out = await api("/api/v1/jobs", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        state.activeJobId = out.job_id;
+        state.logOffset = 0;
+        state.page = 1;
+        document.getElementById("active-job-id").textContent = state.activeJobId;
+        runMsg.textContent = `Job queued: ${state.activeJobId}`;
+        document.getElementById("logs").textContent = "";
+        setStatusPill("queued");
+        pollJob();
+        tabs[1].click();
+      } catch (err) {
+        runMsg.textContent = `Submit failed: ${err.message}`;
+      }
+    }
+
+    async function pollJob() {
+      if (!state.activeJobId) return;
+      if (state.pollHandle) clearInterval(state.pollHandle);
+      state.pollHandle = setInterval(async () => {
+        try {
+          const job = await api(`/api/v1/jobs/${state.activeJobId}`);
+          setStatusPill(job.status);
+          document.getElementById("m-tasks").textContent = `${job.progress.tasks_done} / ${job.progress.tasks_total}`;
+          document.getElementById("m-units").textContent = `${job.progress.units_done} / ${job.progress.units_total}`;
+          document.getElementById("m-p95").textContent = `${Math.round(job.progress.p95_latency_ms || 0)} ms`;
+          document.getElementById("m-err").textContent = `${(job.progress.error_rate || 0).toFixed(2)}%`;
+
+          const logs = await api(`/api/v1/jobs/${state.activeJobId}/logs?offset=${state.logOffset}`);
+          if (logs.logs.length) {
+            const box = document.getElementById("logs");
+            box.textContent += (box.textContent ? "\n" : "") + logs.logs.join("\n");
+            box.scrollTop = box.scrollHeight;
+          }
+          state.logOffset = logs.next_offset;
+
+          if (job.status === "succeeded" || job.status === "failed") {
+            clearInterval(state.pollHandle);
+            state.pollHandle = null;
+            loadSheets();
+            loadHistory();
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }, 1500);
+    }
+
+    async function loadSheets() {
+      const msg = document.getElementById("results-msg");
+      if (!state.activeJobId) {
+        msg.textContent = "No active job.";
+        return;
+      }
+      try {
+        const out = await api(`/api/v1/jobs/${state.activeJobId}/sheets`);
+        const sel = document.getElementById("sheet");
+        sel.innerHTML = out.sheets.map(x => `<option value="${x}">${x}</option>`).join("");
+        msg.textContent = `Loaded ${out.sheets.length} sheet(s).`;
+        if (out.sheets.length) {
+          state.page = 1;
+          await loadResults();
+        }
+      } catch (err) {
+        msg.textContent = `Cannot load sheets: ${err.message}`;
+      }
+    }
+
+    async function loadResults() {
+      const msg = document.getElementById("results-msg");
+      if (!state.activeJobId) {
+        msg.textContent = "No active job.";
+        return;
+      }
+      const sheet = document.getElementById("sheet").value;
+      if (!sheet) {
+        msg.textContent = "Select a sheet first.";
+        return;
+      }
+      const search = document.getElementById("search-text").value.trim();
+      const searchField = document.getElementById("search-field").value;
+      try {
+        const q = new URLSearchParams({
+          sheet,
+          page: String(state.page),
+          page_size: String(state.pageSize),
+          search,
+          search_field: searchField
+        });
+        const out = await api(`/api/v1/jobs/${state.activeJobId}/results?${q.toString()}`);
+        const table = document.getElementById("results-table");
+        let thead = "<thead><tr>" + out.columns.map(c => `<th>${c}</th>`).join("") + "</tr></thead>";
+        let rows = out.rows.map(r => "<tr>" + out.columns.map(c => `<td>${r[c] ?? ""}</td>`).join("") + "</tr>").join("");
+        table.innerHTML = thead + `<tbody>${rows}</tbody>`;
+        msg.textContent = `Rows: ${out.total}`;
+        document.getElementById("page-label").textContent = `page ${out.page}`;
+      } catch (err) {
+        msg.textContent = `Load results failed: ${err.message}`;
+      }
+    }
+
+    async function loadHistory() {
+      const out = await api("/api/v1/history");
+      const cols = ["job_id", "env", "office_code", "from_date", "to_date", "status", "created_at", "finished_at", "has_output"];
+      const table = document.getElementById("history-table");
+      const thead = "<thead><tr>" + cols.map(c => `<th>${c}</th>`).join("") + "<th>actions</th></tr></thead>";
+      const body = out.items.map(item => {
+        const cells = cols.map(c => `<td>${item[c] ?? ""}</td>`).join("");
+        const actions = `
+          <button onclick="openJob('${item.job_id}')">open</button>
+          ${item.has_output ? `<button onclick="downloadJob('${item.job_id}')">download</button>` : ""}
+        `;
+        return `<tr>${cells}<td>${actions}</td></tr>`;
+      }).join("");
+      table.innerHTML = thead + `<tbody>${body}</tbody>`;
+    }
+
+    async function openJob(jobId) {
+      state.activeJobId = jobId;
+      state.logOffset = 0;
+      document.getElementById("active-job-id").textContent = jobId;
+      document.getElementById("logs").textContent = "";
+      await pollJob();
+      await loadSheets();
+      tabs[1].click();
+    }
+
+    async function downloadJob(jobId) {
+      const msg = document.getElementById("results-msg");
+      msg.textContent = "Preparing export...";
+      try {
+        const created = await api(`/api/v1/jobs/${jobId}/exports`, { method: "POST" });
+        const exportId = created.export_id;
+        let tries = 0;
+        while (tries < 120) {
+          await new Promise(r => setTimeout(r, 1000));
+          tries += 1;
+          const st = await api(`/api/v1/jobs/${jobId}/exports/${exportId}`);
+          if (st.status === "succeeded") {
+            window.open(`/api/v1/jobs/${jobId}/exports/${exportId}/download`, "_blank");
+            msg.textContent = "Export ready.";
+            return;
+          }
+          if (st.status === "failed") {
+            msg.textContent = `Export failed: ${st.error || "unknown error"}`;
+            return;
+          }
+        }
+        msg.textContent = "Export is taking longer than expected. Please retry.";
+      } catch (err) {
+        msg.textContent = `Export failed: ${err.message}`;
+      }
+    }
+
+    document.getElementById("run-form").addEventListener("submit", startJob);
+    document.getElementById("btn-search").addEventListener("click", () => { state.page = 1; loadResults(); });
+    document.getElementById("btn-refresh-sheets").addEventListener("click", loadSheets);
+    document.getElementById("btn-download").addEventListener("click", () => {
+      if (!state.activeJobId) return;
+      downloadJob(state.activeJobId);
+    });
+    document.getElementById("btn-prev").addEventListener("click", () => {
+      if (state.page > 1) {
+        state.page -= 1;
+        loadResults();
+      }
+    });
+    document.getElementById("btn-next").addEventListener("click", () => {
+      state.page += 1;
+      loadResults();
+    });
+    document.getElementById("btn-history").addEventListener("click", loadHistory);
+
+    loadMeta();
+    loadHistory();
+  </script>
+</body>
+</html>
