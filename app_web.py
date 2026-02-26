@@ -575,17 +575,16 @@ class JobManager:
             self._store.upsert_job(job)
 
         ui = _BridgeUI(job.payload, self, job_id)
-        replace_mode = (job.payload.get("save_mode") or "replace").lower() == "replace"
         output_file = None
         case_files = {}
 
         try:
             before_files = set(glob.glob(str(BASE_DIR / "output*.xlsx")))
-            process.onFuncButtonClick(ui, None, replace_mode)
+            process.onFuncButtonClick(ui, None, True)
             case_files = dict(getattr(ui, "web_case_files", {}) or {})
             if not case_files:
                 after_files = set(glob.glob(str(BASE_DIR / "output*.xlsx")))
-                output_file = self._detect_output_file(job.payload, before_files, after_files, replace_mode)
+                output_file = self._detect_output_file(job.payload, before_files, after_files)
 
             counts = {
                 "single_case": int(ui.single_case_count.text()),
@@ -620,19 +619,14 @@ class JobManager:
                 self._store.upsert_job(job)
             self._store.append_log(job_id, f"[{datetime.now().strftime('%H:%M:%S')}] [ERR] {exc}", time.time())
 
-    def _detect_output_file(self, payload, before_files, after_files, replace_mode):
+    def _detect_output_file(self, payload, before_files, after_files):
         env = payload["env"]
         office = payload["office_code"]
         new_files = sorted(list(after_files - before_files), key=lambda p: os.path.getmtime(p), reverse=True)
-        if replace_mode:
-            pattern = str(BASE_DIR / f"output_{office}_{env}_*.xlsx")
-            matched = sorted(glob.glob(pattern), key=lambda p: os.path.getmtime(p), reverse=True)
-            if matched:
-                return matched[0]
-        else:
-            default_path = str(BASE_DIR / "output.xlsx")
-            if os.path.exists(default_path):
-                return default_path
+        pattern = str(BASE_DIR / f"output_{office}_{env}_*.xlsx")
+        matched = sorted(glob.glob(pattern), key=lambda p: os.path.getmtime(p), reverse=True)
+        if matched:
+            return matched[0]
         if new_files:
             return new_files[0]
         return None
@@ -695,7 +689,16 @@ class JobManager:
         meta = self.ensure_result_cache(job_id)
         return [x["name"] for x in meta.get("sheets", [])]
 
-    def query_results(self, job_id: str, sheet: str, page: int, page_size: int, search: str, search_field: str):
+    def query_results(
+        self,
+        job_id: str,
+        sheet: str,
+        page: int,
+        page_size: int,
+        search: str,
+        search_field: str,
+        filters: Optional[List[Dict]] = None,
+    ):
         meta = self.ensure_result_cache(job_id)
         sheet_map = {}
         for item in meta.get("sheets", []):
@@ -715,6 +718,8 @@ class JobManager:
 
         offset = (page - 1) * page_size
 
+        filters = filters or []
+
         # Fast path using DuckDB.
         if duckdb is not None:
             con = duckdb.connect(database=":memory:")
@@ -726,13 +731,26 @@ class JobManager:
                 preview = con.execute(f"SELECT * FROM {source_fn}(?) LIMIT 0", [str(data_path)]).fetchdf()
                 columns = [str(c) for c in preview.columns.tolist()]
 
-                where_clause = ""
+                conditions = []
                 where_params: List = []
                 if search and search_field in columns:
                     needle = f"%{search.strip().lower()}%"
                     quoted = '"' + search_field.replace('"', '""') + '"'
-                    where_clause = f" WHERE lower(CAST({quoted} AS VARCHAR)) LIKE ?"
+                    conditions.append(f"lower(CAST({quoted} AS VARCHAR)) LIKE ?")
                     where_params.append(needle)
+
+                for item in filters:
+                    col = str(item.get("field", "")).strip()
+                    val = str(item.get("value", "")).strip()
+                    if not col or not val or col not in columns:
+                        continue
+                    quoted = '"' + col.replace('"', '""') + '"'
+                    conditions.append(f"lower(CAST({quoted} AS VARCHAR)) LIKE ?")
+                    where_params.append(f"%{val.lower()}%")
+
+                where_clause = ""
+                if conditions:
+                    where_clause = " WHERE " + " AND ".join(conditions)
 
                 total = con.execute(
                     f"SELECT COUNT(*) AS c FROM {source_fn}(?) {where_clause}",
@@ -751,6 +769,7 @@ class JobManager:
                     "page_size": page_size,
                     "total": int(total),
                     "columns": columns,
+                    "applied_filters": filters,
                     "rows": df.to_dict(orient="records"),
                 }
             finally:
@@ -764,6 +783,12 @@ class JobManager:
         if search and search_field in df.columns:
             token = search.strip().lower()
             df = df[df[search_field].astype(str).str.lower().str.contains(token, na=False)]
+        for item in filters:
+            col = str(item.get("field", "")).strip()
+            val = str(item.get("value", "")).strip()
+            if col and val and col in df.columns:
+                needle = val.lower()
+                df = df[df[col].astype(str).str.lower().str.contains(needle, na=False)]
         total = len(df)
         page_df = df.iloc[offset : offset + page_size].copy()
         page_df = page_df.where(pd.notnull(page_df), None)
@@ -773,6 +798,7 @@ class JobManager:
             "page_size": page_size,
             "total": int(total),
             "columns": [str(c) for c in page_df.columns.tolist()],
+            "applied_filters": filters,
             "rows": page_df.to_dict(orient="records"),
         }
 
@@ -786,7 +812,6 @@ class RunJobRequest(BaseModel):
     from_date: str
     to_date: str
     source_types: List[str] = Field(default_factory=list)
-    save_mode: str = Field(default="replace", description="replace|append")
 
 
 app = FastAPI(title="toolReadJson Web")
@@ -821,7 +846,6 @@ def meta_options():
     return {
         "envs": ["TEST", "STG"],
         "source_types": ["FRT", "MRI", "DMT", "TBP"],
-        "save_modes": ["replace", "append"],
         "offices": offices,
     }
 
@@ -833,8 +857,6 @@ def create_job(req: RunJobRequest):
         raise HTTPException(status_code=400, detail="env must be TEST or STG")
     if not re.match(r"^\d{8}$", req.from_date) or not re.match(r"^\d{8}$", req.to_date):
         raise HTTPException(status_code=400, detail="from_date/to_date must be YYYYMMDD")
-    if req.save_mode.lower() not in ("replace", "append"):
-        raise HTTPException(status_code=400, detail="save_mode must be replace or append")
     valid_sources = {"FRT", "MRI", "DMT", "TBP"}
     for src in req.source_types:
         if src not in valid_sources:
@@ -846,7 +868,6 @@ def create_job(req: RunJobRequest):
         "from_date": req.from_date.strip(),
         "to_date": req.to_date.strip(),
         "source_types": req.source_types,
-        "save_mode": req.save_mode.lower(),
     }
     job_id = manager.submit(payload)
     return {"job_id": job_id, "status": "queued"}
@@ -892,8 +913,25 @@ def get_job_results(
     page_size: int = Query(100, ge=1, le=500),
     search: str = Query(""),
     search_field: str = Query("INV_NO"),
+    filters_json: str = Query(""),
 ):
-    return manager.query_results(job_id, sheet, page, page_size, search, search_field)
+    filters = []
+    if filters_json:
+        try:
+            raw = json.loads(filters_json)
+            if isinstance(raw, list):
+                for item in raw:
+                    if not isinstance(item, dict):
+                        continue
+                    filters.append(
+                        {
+                            "field": str(item.get("field", "")).strip(),
+                            "value": str(item.get("value", "")).strip(),
+                        }
+                    )
+        except Exception:
+            raise HTTPException(status_code=400, detail="filters_json is invalid")
+    return manager.query_results(job_id, sheet, page, page_size, search, search_field, filters=filters)
 
 
 @app.get("/api/v1/jobs/{job_id}/download")

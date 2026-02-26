@@ -263,14 +263,10 @@ def _finalize_and_save(self, df_all, ofc_cd, env, optione1, start_time):
         setattr(self, "web_case_files", web_case_files)
         update_message_status_box(self, f"Done cache case files ({len(web_case_files)} sheets)")
     else:
-        if optione1:
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            file_name2 = f"output_{ofc_cd}_{env}_{ts}.xlsx"
-            saveNewExcel(self, data_after_process, file_name2, 1)
-            update_message_status_box(self, "Done Save And Replace Excel")
-        else:
-            saveNewExcel(self, data_after_process, file_name, 0)
-            update_message_status_box(self, "Done Save Excel File")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_name2 = f"output_{ofc_cd}_{env}_{ts}.xlsx"
+        saveNewExcel(self, data_after_process, file_name2, 1)
+        update_message_status_box(self, "Done Save And Replace Excel")
 
     setDataCount(self)
     end_time = time.time()
@@ -628,6 +624,7 @@ def onFuncButtonClick(self, MainWindown, optione1):
         return
 
     runtime_cfg = _load_runtime_config(cfg)
+    optione1 = True
     if runtime_cfg["use_async_pipeline"]:
         try:
             import httpx  # noqa: F401

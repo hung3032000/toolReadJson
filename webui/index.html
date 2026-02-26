@@ -164,6 +164,31 @@
       margin-bottom: 10px;
       align-items: center;
     }
+    .chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 10px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #c9d9f8;
+      background: #eef4ff;
+      color: #18417a;
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+    }
+    .chip button {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      color: #18417a;
+      cursor: pointer;
+      font-weight: 700;
+    }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -223,13 +248,6 @@
             <input id="to-date" value="20260201" />
           </div>
           <div class="field">
-            <label>Save Mode</label>
-            <select id="save-mode">
-              <option value="replace">replace</option>
-              <option value="append">append</option>
-            </select>
-          </div>
-          <div class="field">
             <button class="primary" type="submit">Start Job</button>
           </div>
         </div>
@@ -272,6 +290,13 @@
         <button id="btn-refresh-sheets">Reload Sheets</button>
         <button id="btn-download">Download Output</button>
       </div>
+      <div class="toolbar">
+        <select id="filter-column"></select>
+        <input id="filter-value" placeholder="Filter value..." />
+        <button id="btn-add-filter">Add Filter</button>
+        <button id="btn-clear-filters">Clear Filters</button>
+      </div>
+      <div class="chips" id="filter-chips"></div>
       <p class="muted" id="results-msg">No data loaded.</p>
       <div class="table-wrap">
         <table id="results-table"></table>
@@ -315,7 +340,8 @@
       logOffset: 0,
       pollHandle: null,
       page: 1,
-      pageSize: 100
+      pageSize: 100,
+      filters: []
     };
 
     async function api(path, opts = {}) {
@@ -363,8 +389,7 @@
         office_code: document.getElementById("office").value,
         from_date: document.getElementById("from-date").value.trim(),
         to_date: document.getElementById("to-date").value.trim(),
-        source_types: selectedSources(),
-        save_mode: document.getElementById("save-mode").value
+        source_types: selectedSources()
       };
       const runMsg = document.getElementById("run-msg");
       runMsg.textContent = "Submitting job...";
@@ -458,10 +483,12 @@
           page: String(state.page),
           page_size: String(state.pageSize),
           search,
-          search_field: searchField
+          search_field: searchField,
+          filters_json: JSON.stringify(state.filters)
         });
         const out = await api(`/api/v1/jobs/${state.activeJobId}/results?${q.toString()}`);
         const table = document.getElementById("results-table");
+        syncColumnSelectors(out.columns);
         let thead = "<thead><tr>" + out.columns.map(c => `<th>${c}</th>`).join("") + "</tr></thead>";
         let rows = out.rows.map(r => "<tr>" + out.columns.map(c => `<td>${r[c] ?? ""}</td>`).join("") + "</tr>").join("");
         table.innerHTML = thead + `<tbody>${rows}</tbody>`;
@@ -525,9 +552,65 @@
       }
     }
 
+    function syncColumnSelectors(columns) {
+      const searchSel = document.getElementById("search-field");
+      const filterSel = document.getElementById("filter-column");
+      const currentSearch = searchSel.value;
+      const currentFilter = filterSel.value;
+      if (!columns || !columns.length) return;
+      searchSel.innerHTML = columns.map(c => `<option value="${c}">${c}</option>`).join("");
+      filterSel.innerHTML = columns.map(c => `<option value="${c}">${c}</option>`).join("");
+      if (columns.includes(currentSearch)) searchSel.value = currentSearch;
+      if (columns.includes(currentFilter)) filterSel.value = currentFilter;
+    }
+
+    function renderFilterChips() {
+      const box = document.getElementById("filter-chips");
+      if (!state.filters.length) {
+        box.innerHTML = "";
+        return;
+      }
+      box.innerHTML = state.filters.map((f, i) => (
+        `<span class="chip">${f.field}: ${f.value}<button data-idx="${i}" title="Remove">x</button></span>`
+      )).join("");
+      box.querySelectorAll("button[data-idx]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const idx = Number(btn.getAttribute("data-idx"));
+          state.filters.splice(idx, 1);
+          renderFilterChips();
+          state.page = 1;
+          loadResults();
+        });
+      });
+    }
+
+    function addFilter() {
+      const col = document.getElementById("filter-column").value;
+      const val = document.getElementById("filter-value").value.trim();
+      if (!col || !val) return;
+      state.filters.push({ field: col, value: val });
+      document.getElementById("filter-value").value = "";
+      renderFilterChips();
+      state.page = 1;
+      loadResults();
+    }
+
     document.getElementById("run-form").addEventListener("submit", startJob);
     document.getElementById("btn-search").addEventListener("click", () => { state.page = 1; loadResults(); });
+    document.getElementById("filter-value").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addFilter();
+      }
+    });
     document.getElementById("btn-refresh-sheets").addEventListener("click", loadSheets);
+    document.getElementById("btn-add-filter").addEventListener("click", addFilter);
+    document.getElementById("btn-clear-filters").addEventListener("click", () => {
+      state.filters = [];
+      renderFilterChips();
+      state.page = 1;
+      loadResults();
+    });
     document.getElementById("btn-download").addEventListener("click", () => {
       if (!state.activeJobId) return;
       downloadJob(state.activeJobId);
