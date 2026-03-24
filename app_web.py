@@ -1,5 +1,6 @@
 import glob
 import json
+import math
 import os
 import queue
 import re
@@ -12,10 +13,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
@@ -38,6 +39,7 @@ if str(CODE_DIR) not in sys.path:
     sys.path.append(str(CODE_DIR))
 
 import process  # noqa: E402
+from web_filter import apply_to_dataframe, compile_sql, validate_expression
 
 
 def _iso(ts: Optional[float]) -> Optional[str]:
@@ -63,6 +65,23 @@ def _json_load(text: Optional[str], default):
         return default
 
 
+CASE_COUNT_KEYS = (
+    "single_case",
+    "split_case",
+    "split_case_manual",
+    "group_case",
+    "supplement_case",
+)
+
+ALL_SHEETS_NAME = "__ALL_SHEETS__"
+ALL_SHEETS_LABEL = "All Sheets"
+SOURCE_SHEET_COLUMN = "SOURCE_SHEET"
+
+
+def _default_counts():
+    return {key: 0 for key in CASE_COUNT_KEYS}
+
+
 @dataclass
 class JobState:
     job_id: str
@@ -84,15 +103,7 @@ class JobState:
             "parts_written": 0,
         }
     )
-    counts: Dict = field(
-        default_factory=lambda: {
-            "single_case": 0,
-            "split_case": 0,
-            "split_case_manual": 0,
-            "group_case": 0,
-            "supplement_case": 0,
-        }
-    )
+    counts: Dict = field(default_factory=_default_counts)
     output_file: Optional[str] = None
     case_files: Dict = field(default_factory=dict)
     error: Optional[str] = None
@@ -403,6 +414,7 @@ class JobManager:
         self._export_queue: "queue.Queue[Dict]" = queue.Queue()
         self._store = JobStore(STATE_DB)
         self._cache_locks: Dict[str, threading.Lock] = {}
+        self._schema_cache: Dict[Tuple[str, str], Dict[str, Any]] = {}
 
         self._load_from_store()
         self._prune_old_jobs()
@@ -435,6 +447,9 @@ class JobManager:
         with self._lock:
             for job_id in removed:
                 self._jobs.pop(job_id, None)
+                stale_keys = [key for key in self._schema_cache if key[0] == job_id]
+                for key in stale_keys:
+                    self._schema_cache.pop(key, None)
         for job_id in removed:
             cache_dir = ARTIFACTS_DIR / job_id
             if cache_dir.exists():
@@ -505,20 +520,42 @@ class JobManager:
         while True:
             item = self._export_queue.get()
             try:
-                self._execute_export(item["job_id"], item["export_id"])
+                self._execute_export(item["job_id"], item["export_id"], context=item.get("context") or {})
             finally:
                 self._export_queue.task_done()
 
-    def create_export(self, job_id: str) -> Dict:
+    def create_export(self, job_id: str, context: Optional[Dict[str, Any]] = None) -> Dict:
         job = self.get_job(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="job not found")
         if job.status != "succeeded":
             raise HTTPException(status_code=400, detail="job is not completed")
 
+        export_context: Dict[str, Any] = {}
+        context = context or {}
+        if context:
+            sheet = str(context.get("sheet") or "").strip() or ALL_SHEETS_NAME
+            filter_expr = str(context.get("filter_expr") or "").strip()
+            validation, schema = self._compile_filter_expr(job_id, sheet, filter_expr)
+            grouping = self._resolve_grouping(
+                schema,
+                group_enabled=bool(context.get("group_enabled")),
+                group_field=str(context.get("group_field") or ""),
+                distinct_field=str(context.get("distinct_field") or ""),
+                min_distinct=context.get("min_distinct") or 2,
+            )
+            export_context = {
+                "sheet": sheet,
+                "filter_expr": validation.get("normalized_expression", ""),
+                "group_enabled": bool(grouping),
+                "group_field": grouping["group_field"] if grouping else "",
+                "distinct_field": grouping["distinct_field"] if grouping else "",
+                "min_distinct": grouping["min_distinct"] if grouping else 2,
+            }
+
         export_id = uuid.uuid4().hex[:10]
         self._store.create_export(export_id, job_id, "pending")
-        self._export_queue.put({"job_id": job_id, "export_id": export_id})
+        self._export_queue.put({"job_id": job_id, "export_id": export_id, "context": export_context})
         return {"export_id": export_id, "status": "pending"}
 
     def get_export(self, job_id: str, export_id: str) -> Dict:
@@ -527,15 +564,15 @@ class JobManager:
             raise HTTPException(status_code=404, detail="export not found")
         return row
 
-    def _execute_export(self, job_id: str, export_id: str):
+    def _execute_export(self, job_id: str, export_id: str, context: Optional[Dict[str, Any]] = None):
         self._store.update_export(export_id, "running", finished=False)
         try:
-            out_path = self._build_export_file(job_id, export_id)
+            out_path = self._build_export_file(job_id, export_id, context=context or {})
             self._store.update_export(export_id, "succeeded", file_path=out_path, finished=True)
         except Exception as exc:
             self._store.update_export(export_id, "failed", error=str(exc), finished=True)
 
-    def _build_export_file(self, job_id: str, export_id: str) -> str:
+    def _build_export_file(self, job_id: str, export_id: str, context: Optional[Dict[str, Any]] = None) -> str:
         job = self.get_job(job_id)
         if not job:
             raise Exception("job not found")
@@ -544,6 +581,25 @@ class JobManager:
         export_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_file = export_dir / f"export_{export_id}_{ts}.xlsx"
+
+        context = context or {}
+        if context.get("sheet"):
+            sheet = str(context.get("sheet") or ALL_SHEETS_NAME)
+            filter_expr = str(context.get("filter_expr") or "")
+            df, _, schema, _, _, _ = self.materialize_query_frame(
+                job_id,
+                sheet,
+                filter_expr=filter_expr,
+                group_enabled=bool(context.get("group_enabled")),
+                group_field=str(context.get("group_field") or ""),
+                distinct_field=str(context.get("distinct_field") or ""),
+                min_distinct=context.get("min_distinct") or 2,
+            )
+            output_sheet = "filtered_results" if sheet == ALL_SHEETS_NAME else _safe_sheet_name(sheet, 1)
+            output_sheet = output_sheet[:31] or "filtered_results"
+            with pd.ExcelWriter(out_file, engine="openpyxl", mode="w") as writer:
+                df.reindex(columns=schema.get("columns", [])).to_excel(writer, sheet_name=output_sheet, index=False)
+            return str(out_file)
 
         meta = self.ensure_result_cache(job_id)
         sheet_map = [(x.get("name"), x.get("path")) for x in meta.get("sheets", [])]
@@ -642,6 +698,110 @@ class JobManager:
                 self._cache_locks[job_id] = lock
             return lock
 
+    def _resolve_sheet_path(self, job_id: str, item: Dict) -> Optional[Path]:
+        path = item.get("path")
+        if path:
+            p = Path(path)
+            if not p.is_absolute():
+                p = (BASE_DIR / p).resolve()
+            else:
+                p = p.resolve()
+            return p
+
+        parquet_name = item.get("parquet")
+        if parquet_name:
+            return (ARTIFACTS_DIR / job_id / parquet_name).resolve()
+        return None
+
+    def _count_rows_for_path(self, data_path: Path) -> int:
+        if duckdb is not None:
+            con = duckdb.connect(database=":memory:")
+            try:
+                source_fn = "read_parquet" if data_path.suffix.lower() == ".parquet" else "read_csv_auto"
+                return int(con.execute(f"SELECT COUNT(*) FROM {source_fn}(?)", [str(data_path)]).fetchone()[0] or 0)
+            finally:
+                con.close()
+
+        if data_path.suffix.lower() == ".parquet":
+            return int(len(pd.read_parquet(data_path)))
+        return int(len(pd.read_csv(data_path)))
+
+    def _sync_job_counts_from_meta(self, job_id: str, meta: Dict):
+        counts = _default_counts()
+        for item in meta.get("sheets", []):
+            name = str(item.get("name", "")).strip()
+            if name in counts:
+                try:
+                    counts[name] = max(0, int(item.get("row_count", 0) or 0))
+                except Exception:
+                    counts[name] = 0
+
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job or dict(job.counts or {}) == counts:
+                return
+            job.counts = counts
+            self._store.upsert_job(job)
+
+    def _normalize_cache_meta(self, job_id: str, meta: Dict) -> Dict:
+        if not isinstance(meta, dict):
+            meta = {}
+
+        changed = False
+        normalized_sheets = []
+        for item in meta.get("sheets", []):
+            if not isinstance(item, dict):
+                changed = True
+                continue
+
+            sheet_name = str(item.get("name", "")).strip()
+            if not sheet_name:
+                changed = True
+                continue
+
+            resolved_path = self._resolve_sheet_path(job_id, item)
+            row_count = item.get("row_count")
+            try:
+                row_count = max(0, int(row_count))
+            except Exception:
+                row_count = None
+
+            if resolved_path and resolved_path.exists():
+                resolved_path_str = str(resolved_path)
+                if item.get("path") != resolved_path_str:
+                    changed = True
+                if row_count is None:
+                    row_count = self._count_rows_for_path(resolved_path)
+                    changed = True
+            else:
+                resolved_path_str = str(resolved_path) if resolved_path else ""
+                if row_count is None:
+                    row_count = 0
+                    changed = True
+
+            normalized_sheets.append(
+                {
+                    "name": sheet_name,
+                    "path": resolved_path_str,
+                    "row_count": int(row_count or 0),
+                }
+            )
+
+        normalized_meta = {
+            "created_at": meta.get("created_at") or _iso(time.time()),
+            "sheets": normalized_sheets,
+        }
+        if normalized_meta != meta:
+            changed = True
+
+        if changed:
+            meta_path = self._cache_meta_path(job_id)
+            meta_path.parent.mkdir(parents=True, exist_ok=True)
+            meta_path.write_text(json.dumps(normalized_meta, ensure_ascii=True, indent=2), encoding="utf-8")
+
+        self._sync_job_counts_from_meta(job_id, normalized_meta)
+        return normalized_meta
+
     def ensure_result_cache(self, job_id: str) -> Dict:
         job = self.get_job(job_id)
         if not job:
@@ -649,21 +809,30 @@ class JobManager:
 
         meta_path = self._cache_meta_path(job_id)
         if meta_path.exists():
-            return _json_load(meta_path.read_text(encoding="utf-8"), {"sheets": []})
+            meta = _json_load(meta_path.read_text(encoding="utf-8"), {"sheets": []})
+            return self._normalize_cache_meta(job_id, meta)
 
         lock = self._cache_lock(job_id)
         with lock:
             if meta_path.exists():
-                return _json_load(meta_path.read_text(encoding="utf-8"), {"sheets": []})
+                meta = _json_load(meta_path.read_text(encoding="utf-8"), {"sheets": []})
+                return self._normalize_cache_meta(job_id, meta)
 
             cache_dir = meta_path.parent
             cache_dir.mkdir(parents=True, exist_ok=True)
 
             sheets = []
             if job.case_files:
-                for idx, (sheet_name, path) in enumerate(job.case_files.items(), 1):
+                for sheet_name, path in job.case_files.items():
                     if path and os.path.exists(path):
-                        sheets.append({"name": sheet_name, "path": str(Path(path).resolve())})
+                        resolved = Path(path).resolve()
+                        sheets.append(
+                            {
+                                "name": sheet_name,
+                                "path": str(resolved),
+                                "row_count": self._count_rows_for_path(resolved),
+                            }
+                        )
 
             if not sheets:
                 if not job.output_file or not os.path.exists(job.output_file):
@@ -679,15 +848,331 @@ class JobManager:
                     pq_path = cache_dir / pq_name
                     df = pd.read_excel(xls, sheet_name=sheet)
                     df.to_parquet(pq_path, index=False, engine="pyarrow", compression="zstd")
-                    sheets.append({"name": sheet, "path": str(pq_path.resolve())})
+                    sheets.append({"name": sheet, "path": str(pq_path.resolve()), "row_count": int(len(df))})
 
             meta = {"created_at": _iso(time.time()), "sheets": sheets}
             meta_path.write_text(json.dumps(meta, ensure_ascii=True, indent=2), encoding="utf-8")
-            return meta
+            return self._normalize_cache_meta(job_id, meta)
 
     def sheet_names(self, job_id: str) -> List[str]:
+        return [x["name"] for x in self.sheet_items(job_id)]
+
+    def _source_fn_for_path(self, data_path: Path) -> str:
+        return "read_parquet" if data_path.suffix.lower() == ".parquet" else "read_csv_auto"
+
+    def _read_cached_frame(self, data_path: Path) -> pd.DataFrame:
+        if data_path.suffix.lower() == ".parquet":
+            return pd.read_parquet(data_path)
+        return pd.read_csv(data_path)
+
+    def _preview_cached_frame(self, data_path: Path, limit: int = 20) -> pd.DataFrame:
+        if duckdb is not None:
+            con = duckdb.connect(database=":memory:")
+            try:
+                source_fn = self._source_fn_for_path(data_path)
+                return con.execute(
+                    f"SELECT * FROM {source_fn}(?) LIMIT ?",
+                    [str(data_path), int(limit)],
+                ).fetchdf()
+            finally:
+                con.close()
+
+        if data_path.suffix.lower() == ".parquet":
+            return pd.read_parquet(data_path)
+        return pd.read_csv(data_path, nrows=limit)
+
+    def _infer_column_kind(self, series: pd.Series) -> str:
+        if pd.api.types.is_numeric_dtype(series):
+            return "number"
+        return "text"
+
+    def _real_sheet_sources(self, job_id: str) -> List[Dict[str, Any]]:
         meta = self.ensure_result_cache(job_id)
-        return [x["name"] for x in meta.get("sheets", [])]
+        out: List[Dict[str, Any]] = []
+        for item in meta.get("sheets", []):
+            name = str(item.get("name", "")).strip()
+            resolved = self._resolve_sheet_path(job_id, item)
+            if not name or not resolved or not resolved.exists():
+                continue
+            out.append(
+                {
+                    "name": name,
+                    "label": name,
+                    "path": resolved,
+                    "row_count": int(item.get("row_count", 0) or 0),
+                    "is_virtual": False,
+                }
+            )
+        return out
+
+    def _get_dataset_sources(self, job_id: str, sheet: str) -> Tuple[List[Dict[str, Any]], bool]:
+        sources = self._real_sheet_sources(job_id)
+        if sheet == ALL_SHEETS_NAME:
+            return sources, True
+        for source in sources:
+            if source["name"] == sheet:
+                return [source], False
+        raise HTTPException(status_code=400, detail=f"sheet not found: {sheet}")
+
+    def _dataset_total_rows(self, sources: List[Dict[str, Any]]) -> int:
+        return int(sum(int(x.get("row_count", 0) or 0) for x in sources))
+
+    def _get_dataset_schema(self, job_id: str, sheet: str) -> Dict[str, Any]:
+        cache_key = (job_id, sheet)
+        with self._lock:
+            cached = self._schema_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        sources, include_source_sheet = self._get_dataset_sources(job_id, sheet)
+        columns: List[str] = []
+        column_info: Dict[str, Dict[str, Any]] = {}
+        if sources:
+            preview = self._preview_cached_frame(sources[0]["path"], limit=20)
+            columns = [str(c) for c in preview.columns.tolist()]
+            for col in columns:
+                column_info[col] = {"kind": self._infer_column_kind(preview[col])}
+
+        if include_source_sheet and SOURCE_SHEET_COLUMN not in columns:
+            columns.append(SOURCE_SHEET_COLUMN)
+            column_info[SOURCE_SHEET_COLUMN] = {"kind": "text"}
+
+        schema = {"columns": columns, "column_info": column_info}
+        with self._lock:
+            self._schema_cache[cache_key] = schema
+        return schema
+
+    def sheet_items(self, job_id: str) -> List[Dict]:
+        sources = self._real_sheet_sources(job_id)
+        all_schema = self._get_dataset_schema(job_id, ALL_SHEETS_NAME) if sources else {"columns": [SOURCE_SHEET_COLUMN]}
+        items = [
+            {
+                "name": ALL_SHEETS_NAME,
+                "label": ALL_SHEETS_LABEL,
+                "total_rows": self._dataset_total_rows(sources),
+                "is_virtual": True,
+                "columns": list(all_schema.get("columns", [])),
+            }
+        ]
+        for source in sources:
+            schema = self._get_dataset_schema(job_id, source["name"])
+            items.append(
+                {
+                    "name": source["name"],
+                    "label": source["label"],
+                    "total_rows": int(source["row_count"]),
+                    "is_virtual": False,
+                    "columns": list(schema.get("columns", [])),
+                }
+            )
+        return items
+
+    def validate_filter(self, job_id: str, expression: str, sheet: str = ALL_SHEETS_NAME) -> Dict[str, Any]:
+        schema = self._get_dataset_schema(job_id, sheet)
+        result = validate_expression(expression, schema.get("columns", []))
+        result.pop("ast", None)
+        result["sheet"] = sheet
+        result["columns"] = list(schema.get("columns", []))
+        return result
+
+    def _compile_filter_expr(self, job_id: str, sheet: str, filter_expr: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        schema = self._get_dataset_schema(job_id, sheet)
+        validation = validate_expression(filter_expr, schema.get("columns", []))
+        if not validation["valid"]:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "filter expression is invalid",
+                    "errors": validation.get("errors", []),
+                    "suggestions": validation.get("suggestions", []),
+                },
+            )
+        return validation, schema
+
+    def _validate_grouping_fields(
+        self,
+        schema: Dict[str, Any],
+        group_field: str,
+        distinct_field: str,
+    ) -> Tuple[str, str, List[str]]:
+        columns = list(schema.get("columns", []))
+        group_field = str(group_field or "").strip()
+        distinct_field = str(distinct_field or "").strip()
+
+        if not group_field or group_field not in columns:
+            raise HTTPException(status_code=400, detail=f"group_field not found: {group_field or '(empty)'}")
+        if not distinct_field or distinct_field not in columns:
+            raise HTTPException(status_code=400, detail=f"distinct_field not found: {distinct_field or '(empty)'}")
+        if group_field == distinct_field:
+            raise HTTPException(status_code=400, detail="group_field and distinct_field must be different")
+        return group_field, distinct_field, columns
+
+    def _resolve_grouping(
+        self,
+        schema: Dict[str, Any],
+        group_enabled: bool = False,
+        group_field: str = "",
+        distinct_field: str = "",
+        min_distinct: int = 2,
+    ) -> Optional[Dict[str, Any]]:
+        if not group_enabled:
+            return None
+
+        group_field, distinct_field, _ = self._validate_grouping_fields(schema, group_field, distinct_field)
+        try:
+            min_distinct = int(min_distinct or 2)
+        except Exception:
+            raise HTTPException(status_code=400, detail="min_distinct must be an integer >= 2")
+        if min_distinct < 2:
+            raise HTTPException(status_code=400, detail="min_distinct must be >= 2")
+
+        return {
+            "group_field": group_field,
+            "distinct_field": distinct_field,
+            "min_distinct": min_distinct,
+        }
+
+    def _build_group_summary_rows(
+        self,
+        df: pd.DataFrame,
+        grouping: Dict[str, Any],
+    ) -> Tuple[List[Dict[str, Any]], List[Any], bool]:
+        group_field = grouping["group_field"]
+        distinct_field = grouping["distinct_field"]
+        min_distinct = grouping["min_distinct"]
+        summary_rows: List[Dict[str, Any]] = []
+        valid_group_values: List[Any] = []
+        include_null_group = False
+
+        if df.empty:
+            return summary_rows, valid_group_values, include_null_group
+
+        for group_value, grp in df.groupby(group_field, dropna=False, sort=False):
+            series = grp[distinct_field].dropna()
+            distinct_values = sorted({str(x) for x in series.tolist()})
+            distinct_count = len(distinct_values)
+            if distinct_count < min_distinct:
+                continue
+
+            summary_rows.append(
+                {
+                    group_field: None if pd.isna(group_value) else str(group_value),
+                    "GROUP_ROW_COUNT": int(len(grp.index)),
+                    "GROUP_DISTINCT_COUNT": int(distinct_count),
+                    "GROUP_DISTINCT_VALUES": ", ".join(distinct_values) if distinct_values else None,
+                }
+            )
+            if pd.isna(group_value):
+                include_null_group = True
+            else:
+                valid_group_values.append(group_value)
+
+        summary_rows.sort(
+            key=lambda row: (
+                -int(row.get("GROUP_DISTINCT_COUNT", 0) or 0),
+                -int(row.get("GROUP_ROW_COUNT", 0) or 0),
+                str(row.get(group_field) or ""),
+            )
+        )
+        return summary_rows, valid_group_values, include_null_group
+
+    def _apply_grouping_to_frame(
+        self,
+        df: pd.DataFrame,
+        grouping: Optional[Dict[str, Any]],
+    ) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
+        if not grouping:
+            return df, []
+
+        summary_rows, valid_group_values, include_null_group = self._build_group_summary_rows(df, grouping)
+        if not summary_rows:
+            return df.iloc[0:0].copy(), []
+
+        group_field = grouping["group_field"]
+        mask = pd.Series(False, index=df.index)
+        if valid_group_values:
+            mask = df[group_field].isin(valid_group_values)
+        if include_null_group:
+            mask = mask | df[group_field].isna()
+        return df.loc[mask].copy(), summary_rows
+
+    def _build_duckdb_source_sql(self, sources: List[Dict[str, Any]], include_source_sheet: bool) -> Tuple[str, List[Any]]:
+        parts: List[str] = []
+        params: List[Any] = []
+        for source in sources:
+            source_fn = self._source_fn_for_path(source["path"])
+            if include_source_sheet:
+                parts.append(f'SELECT *, ? AS "{SOURCE_SHEET_COLUMN}" FROM {source_fn}(?)')
+                params.extend([source["name"], str(source["path"])])
+            else:
+                parts.append(f"SELECT * FROM {source_fn}(?)")
+                params.append(str(source["path"]))
+        return " UNION ALL ".join(parts), params
+
+    def _read_dataset_frame(self, sources: List[Dict[str, Any]], include_source_sheet: bool, schema_columns: List[str]) -> pd.DataFrame:
+        frames: List[pd.DataFrame] = []
+        for source in sources:
+            df = self._read_cached_frame(source["path"])
+            if include_source_sheet and SOURCE_SHEET_COLUMN not in df.columns:
+                df[SOURCE_SHEET_COLUMN] = source["name"]
+            frames.append(df)
+
+        if not frames:
+            return pd.DataFrame(columns=schema_columns)
+
+        if len(frames) == 1:
+            merged = frames[0].copy()
+        else:
+            merged = pd.concat(frames, ignore_index=True, copy=False)
+
+        for col in schema_columns:
+            if col not in merged.columns:
+                merged[col] = None
+        return merged.reindex(columns=schema_columns)
+
+    def materialize_filtered_frame(
+        self,
+        job_id: str,
+        sheet: str,
+        filter_expr: str = "",
+        search: str = "",
+        search_field: str = "",
+    ) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, Any], int]:
+        sources, include_source_sheet = self._get_dataset_sources(job_id, sheet)
+        validation, schema = self._compile_filter_expr(job_id, sheet, filter_expr)
+        df = self._read_dataset_frame(sources, include_source_sheet, schema.get("columns", []))
+        if validation.get("normalized_expression"):
+            mask = apply_to_dataframe(df, validation["ast"], schema["column_info"])
+            df = df.loc[mask].copy()
+        if search and search_field and search_field in df.columns:
+            token = search.strip().lower()
+            df = df[df[search_field].astype(str).str.lower().str.contains(token, na=False)]
+        return df, validation, schema, self._dataset_total_rows(sources)
+
+    def materialize_query_frame(
+        self,
+        job_id: str,
+        sheet: str,
+        filter_expr: str = "",
+        group_enabled: bool = False,
+        group_field: str = "",
+        distinct_field: str = "",
+        min_distinct: int = 2,
+    ) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, Any], int, Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+        df, validation, schema, unfiltered_total = self.materialize_filtered_frame(
+            job_id,
+            sheet,
+            filter_expr=filter_expr,
+        )
+        grouping = self._resolve_grouping(
+            schema,
+            group_enabled=group_enabled,
+            group_field=group_field,
+            distinct_field=distinct_field,
+            min_distinct=min_distinct,
+        )
+        df, grouped_rows = self._apply_grouping_to_frame(df, grouping)
+        return df, validation, schema, unfiltered_total, grouping, grouped_rows
 
     def query_results(
         self,
@@ -697,89 +1182,26 @@ class JobManager:
         page_size: int,
         search: str,
         search_field: str,
+        filter_expr: str = "",
         filters: Optional[List[Dict]] = None,
+        group_enabled: bool = False,
+        group_field: str = "",
+        distinct_field: str = "",
+        min_distinct: int = 2,
     ):
-        meta = self.ensure_result_cache(job_id)
-        sheet_map = {}
-        for item in meta.get("sheets", []):
-            sheet_name = item.get("name")
-            path = item.get("path")
-            if not path and item.get("parquet"):
-                path = str((ARTIFACTS_DIR / job_id / item["parquet"]).resolve())
-            if sheet_name and path:
-                sheet_map[sheet_name] = path
-        data_path = sheet_map.get(sheet)
-        if not data_path:
-            raise HTTPException(status_code=400, detail=f"sheet not found: {sheet}")
-
-        data_path = Path(data_path)
-        if not data_path.exists():
-            raise HTTPException(status_code=500, detail="cached result file missing")
-
-        offset = (page - 1) * page_size
-
         filters = filters or []
-
-        # Fast path using DuckDB.
-        if duckdb is not None:
-            con = duckdb.connect(database=":memory:")
-            try:
-                if data_path.suffix.lower() == ".parquet":
-                    source_fn = "read_parquet"
-                else:
-                    source_fn = "read_csv_auto"
-                preview = con.execute(f"SELECT * FROM {source_fn}(?) LIMIT 0", [str(data_path)]).fetchdf()
-                columns = [str(c) for c in preview.columns.tolist()]
-
-                conditions = []
-                where_params: List = []
-                if search and search_field in columns:
-                    needle = f"%{search.strip().lower()}%"
-                    quoted = '"' + search_field.replace('"', '""') + '"'
-                    conditions.append(f"lower(CAST({quoted} AS VARCHAR)) LIKE ?")
-                    where_params.append(needle)
-
-                for item in filters:
-                    col = str(item.get("field", "")).strip()
-                    val = str(item.get("value", "")).strip()
-                    if not col or not val or col not in columns:
-                        continue
-                    quoted = '"' + col.replace('"', '""') + '"'
-                    conditions.append(f"lower(CAST({quoted} AS VARCHAR)) LIKE ?")
-                    where_params.append(f"%{val.lower()}%")
-
-                where_clause = ""
-                if conditions:
-                    where_clause = " WHERE " + " AND ".join(conditions)
-
-                total = con.execute(
-                    f"SELECT COUNT(*) AS c FROM {source_fn}(?) {where_clause}",
-                    [str(data_path), *where_params],
-                ).fetchone()[0]
-
-                df = con.execute(
-                    f"SELECT * FROM {source_fn}(?) {where_clause} LIMIT ? OFFSET ?",
-                    [str(data_path), *where_params, int(page_size), int(offset)],
-                ).fetchdf()
-                df = df.where(pd.notnull(df), None)
-
-                return {
-                    "sheet": sheet,
-                    "page": page,
-                    "page_size": page_size,
-                    "total": int(total),
-                    "columns": columns,
-                    "applied_filters": filters,
-                    "rows": df.to_dict(orient="records"),
-                }
-            finally:
-                con.close()
-
-        # Fallback path when DuckDB is unavailable.
-        if data_path.suffix.lower() == ".parquet":
-            df = pd.read_parquet(data_path)
-        else:
-            df = pd.read_csv(data_path)
+        df, validation, schema, unfiltered_total, grouping, _ = self.materialize_query_frame(
+            job_id,
+            sheet,
+            filter_expr=filter_expr,
+            group_enabled=group_enabled,
+            group_field=group_field,
+            distinct_field=distinct_field,
+            min_distinct=min_distinct,
+        )
+        normalized_filter_expr = validation.get("normalized_expression", "")
+        columns = list(schema.get("columns", []))
+        source_rows_filtered = int(len(df.index))
         if search and search_field in df.columns:
             token = search.strip().lower()
             df = df[df[search_field].astype(str).str.lower().str.contains(token, na=False)]
@@ -787,19 +1209,111 @@ class JobManager:
             col = str(item.get("field", "")).strip()
             val = str(item.get("value", "")).strip()
             if col and val and col in df.columns:
-                needle = val.lower()
-                df = df[df[col].astype(str).str.lower().str.contains(needle, na=False)]
-        total = len(df)
+                df = df[df[col].astype(str).str.lower().str.contains(val.lower(), na=False)]
+        filtered_total = len(df)
+        total_pages = max(1, int(math.ceil(filtered_total / float(page_size)))) if filtered_total else 1
+        page = max(1, min(int(page), total_pages))
+        offset = (page - 1) * page_size
         page_df = df.iloc[offset : offset + page_size].copy()
         page_df = page_df.where(pd.notnull(page_df), None)
+        page_row_from = offset + 1 if filtered_total else 0
+        page_row_to = offset + len(page_df.index) if filtered_total else 0
         return {
             "sheet": sheet,
             "page": page,
             "page_size": page_size,
-            "total": int(total),
-            "columns": [str(c) for c in page_df.columns.tolist()],
+            "total": int(filtered_total),
+            "unfiltered_total": unfiltered_total,
+            "filtered_total": int(filtered_total),
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+            "page_row_from": page_row_from,
+            "page_row_to": page_row_to,
+            "columns": columns,
+            "filter_expr": filter_expr,
+            "normalized_filter_expression": normalized_filter_expr,
             "applied_filters": filters,
+            "group_enabled": bool(grouping),
+            "group_field": grouping["group_field"] if grouping else "",
+            "distinct_field": grouping["distinct_field"] if grouping else "",
+            "min_distinct": grouping["min_distinct"] if grouping else None,
+            "source_rows_filtered": source_rows_filtered,
             "rows": page_df.to_dict(orient="records"),
+        }
+
+    def query_grouped_results(
+        self,
+        job_id: str,
+        sheet: str,
+        group_field: str,
+        distinct_field: str,
+        page: int,
+        page_size: int,
+        filter_expr: str = "",
+        min_distinct: int = 2,
+        search: str = "",
+    ):
+        df, validation, _, source_rows_total, grouping, grouped_rows = self.materialize_query_frame(
+            job_id,
+            sheet,
+            filter_expr=filter_expr,
+            group_enabled=True,
+            group_field=group_field,
+            distinct_field=distinct_field,
+            min_distinct=min_distinct,
+        )
+        normalized_filter_expr = validation.get("normalized_expression", "")
+        if not grouping:
+            raise HTTPException(status_code=400, detail="grouping configuration is required")
+
+        group_field = grouping["group_field"]
+        distinct_field = grouping["distinct_field"]
+        min_distinct = grouping["min_distinct"]
+        summary_columns = [group_field, "GROUP_ROW_COUNT", "GROUP_DISTINCT_COUNT", "GROUP_DISTINCT_VALUES"]
+        source_rows_filtered = int(len(df.index))
+        search = str(search or "").strip()
+        visible_grouped_rows = list(grouped_rows)
+        if search:
+            token = search.lower()
+            visible_grouped_rows = [
+                row
+                for row in visible_grouped_rows
+                if token in str(row.get(group_field) or "").lower()
+                or token in str(row.get("GROUP_DISTINCT_VALUES") or "").lower()
+            ]
+
+        filtered_total = len(visible_grouped_rows)
+        total_pages = max(1, int(math.ceil(filtered_total / float(page_size)))) if filtered_total else 1
+        page = max(1, min(int(page), total_pages))
+        offset = (page - 1) * page_size
+        page_rows = visible_grouped_rows[offset : offset + page_size]
+        page_row_from = offset + 1 if filtered_total else 0
+        page_row_to = offset + len(page_rows) if filtered_total else 0
+        return {
+            "mode": "grouped",
+            "sheet": sheet,
+            "page": page,
+            "page_size": page_size,
+            "total": int(filtered_total),
+            "unfiltered_total": source_rows_total,
+            "filtered_total": int(filtered_total),
+            "source_rows_total": source_rows_total,
+            "source_rows_filtered": int(source_rows_filtered),
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+            "page_row_from": page_row_from,
+            "page_row_to": page_row_to,
+            "columns": summary_columns,
+            "group_field": group_field,
+            "distinct_field": distinct_field,
+            "min_distinct": min_distinct,
+            "search": search,
+            "filter_expr": filter_expr,
+            "normalized_filter_expression": normalized_filter_expr,
+            "group_enabled": True,
+            "rows": page_rows,
         }
 
 
@@ -812,6 +1326,20 @@ class RunJobRequest(BaseModel):
     from_date: str
     to_date: str
     source_types: List[str] = Field(default_factory=list)
+
+
+class ValidateFilterRequest(BaseModel):
+    expression: str = ""
+    sheet: str = ALL_SHEETS_NAME
+
+
+class CreateExportRequest(BaseModel):
+    sheet: str = ""
+    filter_expr: str = ""
+    group_enabled: bool = False
+    group_field: str = ""
+    distinct_field: str = ""
+    min_distinct: int = 2
 
 
 app = FastAPI(title="toolReadJson Web")
@@ -830,6 +1358,15 @@ def index():
     if not html_path.exists():
         return "<h1>webui/index.html not found</h1>"
     return html_path.read_text(encoding="utf-8")
+
+
+@app.get("/healthz")
+def healthz():
+    return {
+        "status": "ok",
+        "app": "toolReadJson Web",
+        "time": datetime.now().isoformat(timespec="seconds"),
+    }
 
 
 @app.get("/api/v1/meta/options")
@@ -878,6 +1415,14 @@ def get_job(job_id: str):
     job = manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="job not found")
+    if job.status == "succeeded":
+        try:
+            manager.ensure_result_cache(job_id)
+            job = manager.get_job(job_id) or job
+        except Exception:
+            pass
+    counts = _default_counts()
+    counts.update(job.counts or {})
     return {
         "job_id": job.job_id,
         "status": job.status,
@@ -885,7 +1430,7 @@ def get_job(job_id: str):
         "started_at": _iso(job.started_at),
         "finished_at": _iso(job.finished_at),
         "progress": job.progress,
-        "counts": job.counts,
+        "counts": counts,
         "has_output": bool((job.output_file and os.path.exists(job.output_file)) or (job.case_files and len(job.case_files) > 0)),
         "error": job.error,
     }
@@ -902,7 +1447,17 @@ def get_job_logs(job_id: str, offset: int = Query(0, ge=0)):
 
 @app.get("/api/v1/jobs/{job_id}/sheets")
 def get_job_sheets(job_id: str):
-    return {"sheets": manager.sheet_names(job_id)}
+    items = manager.sheet_items(job_id)
+    return {
+        "sheets": [x["name"] for x in items],
+        "items": items,
+        "all_sheets_name": ALL_SHEETS_NAME,
+    }
+
+
+@app.post("/api/v1/jobs/{job_id}/filter/validate")
+def validate_filter(job_id: str, req: ValidateFilterRequest):
+    return manager.validate_filter(job_id, req.expression, sheet=req.sheet or ALL_SHEETS_NAME)
 
 
 @app.get("/api/v1/jobs/{job_id}/results")
@@ -913,6 +1468,11 @@ def get_job_results(
     page_size: int = Query(100, ge=1, le=500),
     search: str = Query(""),
     search_field: str = Query("INV_NO"),
+    filter_expr: str = Query(""),
+    group_enabled: bool = Query(False),
+    group_field: str = Query(""),
+    distinct_field: str = Query(""),
+    min_distinct: int = Query(2, ge=2, le=1000),
     filters_json: str = Query(""),
 ):
     filters = []
@@ -931,7 +1491,45 @@ def get_job_results(
                     )
         except Exception:
             raise HTTPException(status_code=400, detail="filters_json is invalid")
-    return manager.query_results(job_id, sheet, page, page_size, search, search_field, filters=filters)
+    return manager.query_results(
+        job_id,
+        sheet,
+        page,
+        page_size,
+        search,
+        search_field,
+        filter_expr=filter_expr,
+        filters=filters,
+        group_enabled=group_enabled,
+        group_field=group_field,
+        distinct_field=distinct_field,
+        min_distinct=min_distinct,
+    )
+
+
+@app.get("/api/v1/jobs/{job_id}/grouped-results")
+def get_job_grouped_results(
+    job_id: str,
+    sheet: str = Query(...),
+    group_field: str = Query(...),
+    distinct_field: str = Query(...),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=500),
+    filter_expr: str = Query(""),
+    min_distinct: int = Query(2, ge=2, le=1000),
+    search: str = Query(""),
+):
+    return manager.query_grouped_results(
+        job_id,
+        sheet,
+        group_field=group_field,
+        distinct_field=distinct_field,
+        page=page,
+        page_size=page_size,
+        filter_expr=filter_expr,
+        min_distinct=min_distinct,
+        search=search,
+    )
 
 
 @app.get("/api/v1/jobs/{job_id}/download")
@@ -959,8 +1557,18 @@ def download_job_file(job_id: str):
 
 
 @app.post("/api/v1/jobs/{job_id}/exports")
-def create_export(job_id: str):
-    return manager.create_export(job_id)
+def create_export(job_id: str, req: Optional[CreateExportRequest] = Body(None)):
+    context = None
+    if req is not None and (req.sheet or req.filter_expr or req.group_enabled):
+        context = {
+            "sheet": req.sheet,
+            "filter_expr": req.filter_expr,
+            "group_enabled": req.group_enabled,
+            "group_field": req.group_field,
+            "distinct_field": req.distinct_field,
+            "min_distinct": req.min_distinct,
+        }
+    return manager.create_export(job_id, context=context)
 
 
 @app.get("/api/v1/jobs/{job_id}/exports/{export_id}")
@@ -997,6 +1605,14 @@ def download_export(job_id: str, export_id: str):
 def history(limit: int = Query(30, ge=1, le=200)):
     out = []
     for job in manager.list_jobs()[:limit]:
+        if job.status == "succeeded":
+            try:
+                manager.ensure_result_cache(job.job_id)
+                job = manager.get_job(job.job_id) or job
+            except Exception:
+                pass
+        counts = _default_counts()
+        counts.update(job.counts or {})
         out.append(
             {
                 "job_id": job.job_id,
@@ -1008,7 +1624,8 @@ def history(limit: int = Query(30, ge=1, le=200)):
                 "created_at": _iso(job.created_at),
                 "started_at": _iso(job.started_at),
                 "finished_at": _iso(job.finished_at),
-                "counts": job.counts,
+                "counts": counts,
+                **counts,
                 "has_output": bool((job.output_file and os.path.exists(job.output_file)) or (job.case_files and len(job.case_files) > 0)),
             }
         )

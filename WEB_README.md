@@ -13,6 +13,40 @@ Open:
 http://127.0.0.1:8000
 ```
 
+## Public via nginx on Windows
+
+If you already have `nginx` on Windows, this repo now includes:
+
+- `deploy/start_web_prod.ps1`: start FastAPI backend on `127.0.0.1:8000`
+- `deploy/stop_web_prod.ps1`: stop the backend using saved PID
+- `deploy/nginx/toolreadjson.windows.conf`: reverse-proxy server block for `nginx`
+
+Typical flow:
+
+```powershell
+cd C:\Users\hung.pn\Desktop\Code\toolReadJson
+.\deploy\start_web_prod.ps1
+```
+
+Then point `nginx` port `80` to `http://127.0.0.1:8000` with the included config and reload:
+
+```powershell
+cd C:\Users\hung.pn\Downloads\nginx-1.29.4\nginx-1.29.4
+.\nginx.exe -t
+.\nginx.exe -s reload
+```
+
+Quick checks:
+
+- `http://127.0.0.1/`
+- `http://127.0.0.1/healthz`
+
+To expose it outside your machine, you still need:
+
+- Windows Firewall allow inbound TCP `80`
+- Router/NAT port-forward if clients are outside your LAN
+- Optional domain -> public IP mapping
+
 ## API quick check
 
 - `GET /api/v1/meta/options`

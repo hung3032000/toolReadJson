@@ -1,9 +1,9 @@
-<!doctype html>
-<html lang="en">
+﻿<!doctype html>
+<html lang="vi">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>toolReadJson Web</title>
+  <title>toolReadJson Control Desk</title>
   <style>
     :root {
       --bg: #f4f6fb;
@@ -14,20 +14,22 @@
       --accent: #0d66ff;
       --accent-soft: #e7f0ff;
       --ok: #0f9d58;
-      --warn: #c97a00;
+      --warn: #2563eb;
       --err: #d93025;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
+      min-height: 100vh;
       font-family: "Segoe UI", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
       color: var(--ink);
       background: radial-gradient(circle at 0 0, #dbe8ff 0%, #f4f6fb 40%, #f4f6fb 100%);
     }
     .shell {
-      max-width: 1280px;
-      margin: 24px auto;
-      padding: 0 16px;
+      width: 100%;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px 24px 28px;
     }
     .hero {
       background: linear-gradient(120deg, #ffffff 0%, #f6faff 100%);
@@ -85,13 +87,22 @@
     }
     .field { display: flex; flex-direction: column; gap: 6px; }
     .field label { font-size: 12px; color: var(--muted); }
-    input, select, button {
+    input, select, textarea, button {
       font: inherit;
       border: 1px solid var(--line);
       border-radius: 10px;
       padding: 10px 12px;
       background: #fff;
       color: var(--ink);
+    }
+    textarea {
+      width: 100%;
+      min-height: 140px;
+      resize: vertical;
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
     }
     button.primary {
       background: var(--accent);
@@ -149,7 +160,7 @@
       color: #dbe6ff;
       border-radius: 12px;
       min-height: 260px;
-      max-height: 360px;
+      max-height: min(52vh, 560px);
       overflow: auto;
       padding: 12px;
       font-family: "Cascadia Mono", Consolas, monospace;
@@ -164,13 +175,60 @@
       margin-bottom: 10px;
       align-items: center;
     }
-    .chips {
+    .mode-switch {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .mode-btn {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 8px 13px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .mode-btn.active {
+      border-color: #b8d2ff;
+      background: var(--accent-soft);
+      color: #0948b3;
+      font-weight: 600;
+    }
+    .filter-layout {
+      display: grid;
+      grid-template-columns: 1.1fr 1.4fr;
+      gap: 16px;
+    }
+    .filter-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fcfdff;
+    }
+    .filter-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+    .filter-mode { display: none; }
+    .filter-mode.active { display: block; }
+    .expr-box {
+      min-height: 160px;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .builder-list {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      min-height: 44px;
       margin-bottom: 10px;
     }
-    .chip {
+    .builder-chip {
       display: inline-flex;
       align-items: center;
       gap: 8px;
@@ -181,13 +239,52 @@
       padding: 6px 10px;
       font-size: 12px;
     }
-    .chip button {
+    .builder-chip button {
       border: 0;
       background: transparent;
       padding: 0;
       color: #18417a;
       cursor: pointer;
       font-weight: 700;
+    }
+    .status-box {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      background: #f8fbff;
+      white-space: pre-wrap;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .status-ok {
+      border-color: #b9e2c9;
+      background: #edf8f1;
+      color: #125c35;
+    }
+    .status-error {
+      border-color: #f1c4c0;
+      background: #fff2f1;
+      color: #8a241d;
+    }
+    .status-warn {
+      border-color: #bfd7ff;
+      background: #eef5ff;
+      color: #1f4fa3;
+    }
+    .helper-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .code-inline {
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 12px;
+      background: #f2f6ff;
+      border: 1px solid #d7e3ff;
+      border-radius: 8px;
+      padding: 2px 6px;
     }
     table {
       width: 100%;
@@ -202,7 +299,7 @@
     }
     th { background: #f8fbff; position: sticky; top: 0; }
     .table-wrap {
-      max-height: 460px;
+      max-height: min(62vh, 760px);
       overflow: auto;
       border: 1px solid var(--line);
       border-radius: 10px;
@@ -210,29 +307,544 @@
     .muted { color: var(--muted); font-size: 12px; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; }
     @media (max-width: 980px) {
+      .shell { padding: 16px; }
       .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .filter-layout { grid-template-columns: 1fr; }
+      .filter-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    :root {
+      --bg: #f4efe5;
+      --panel: rgba(255, 255, 255, 0.78);
+      --ink: #14213d;
+      --muted: #68748b;
+      --line: rgba(20, 33, 61, 0.12);
+      --accent: #0f766e;
+      --accent-soft: rgba(15, 118, 110, 0.12);
+      --surface-soft: rgba(59, 130, 246, 0.08);
+    }
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      overflow-x: hidden;
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 34%),
+        radial-gradient(circle at top right, rgba(59, 130, 246, 0.14), transparent 28%),
+        linear-gradient(180deg, #eef5fb 0%, #e8f0f8 52%, #dde9f3 100%);
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(20, 33, 61, 0.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(20, 33, 61, 0.018) 1px, transparent 1px);
+      background-size: 28px 28px;
+      mask-image: radial-gradient(circle at center, black 52%, transparent 100%);
+    }
+    .shell {
+      width: calc(100vw - 14px);
+      max-width: none;
+      padding: 18px 18px 34px;
+      position: relative;
+      z-index: 1;
+    }
+    .hero,
+    .panel {
+      border: 1px solid rgba(255, 255, 255, 0.42);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(241, 247, 252, 0.82));
+      backdrop-filter: blur(14px);
+      box-shadow: 0 24px 48px rgba(22, 33, 61, 0.12);
+    }
+    .hero {
+      padding: 18px 22px;
+      border-radius: 28px;
+    }
+    .hero-top {
+      display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.9fr);
+      gap: 18px;
+      align-items: stretch;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid rgba(20, 33, 61, 0.08);
+      color: #0b5d58;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .hero h1 {
+      margin-top: 18px;
+      margin-bottom: 10px;
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: clamp(34px, 4vw, 54px);
+      line-height: 0.96;
+      letter-spacing: -0.05em;
+      max-width: 12ch;
+    }
+    .hero p {
+      max-width: 62ch;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+    .hero-badges {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    .hero-badge,
+    .summary-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid rgba(20, 33, 61, 0.08);
+      font-size: 12px;
+      font-weight: 700;
+      color: #244269;
+    }
+    .hero-summary {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+    .summary-card {
+      padding: 18px 20px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid rgba(20, 33, 61, 0.08);
+      box-shadow: 0 16px 34px rgba(22, 33, 61, 0.06);
+    }
+    .summary-card .k,
+    .section-tag {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .summary-card .v {
+      margin-top: 8px;
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 23px;
+      font-weight: 700;
+      line-height: 1.08;
+      letter-spacing: -0.04em;
+    }
+    .summary-card p {
+      margin-top: 10px;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .tabs {
+      gap: 12px;
+      margin-top: 0;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+    .tab-btn {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      width: 100%;
+      padding: 16px;
+      border-radius: 24px;
+      border: 1px solid rgba(20, 33, 61, 0.08);
+      background: rgba(255, 255, 255, 0.84);
+      text-align: left;
+      transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background 180ms ease;
+    }
+    .tab-btn:hover {
+      transform: translateY(-2px);
+      border-color: rgba(15, 118, 110, 0.28);
+      box-shadow: 0 16px 30px rgba(20, 33, 61, 0.08);
+    }
+    .tab-btn.active {
+      border-color: rgba(15, 118, 110, 0.34);
+      background: linear-gradient(135deg, rgba(15, 118, 110, 0.16), rgba(255, 255, 255, 0.96));
+      color: #0b5d58;
+      box-shadow: 0 18px 32px rgba(15, 118, 110, 0.12);
+    }
+    .tab-step {
+      width: 34px;
+      height: 34px;
+      flex: 0 0 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: rgba(20, 33, 61, 0.06);
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .tab-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .tab-copy strong {
+      font-size: 14px;
+      font-weight: 800;
+    }
+    .tab-copy small {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .panel {
+      margin-top: 16px;
+      padding: 28px 30px;
+      border-radius: 30px;
+    }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .section-header h2 {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 28px;
+      letter-spacing: -0.04em;
+    }
+    .section-header p {
+      margin-top: 8px;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.65;
+      max-width: 66ch;
+    }
+    .field label {
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    input, select, textarea {
+      border-radius: 16px;
+      padding: 13px 14px;
+      border-color: rgba(20, 33, 61, 0.12);
+      background: rgba(255, 255, 255, 0.9);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    }
+    input:disabled, select:disabled, textarea:disabled {
+      opacity: 0.66;
+      cursor: not-allowed;
+      background: rgba(242, 244, 247, 0.92);
+    }
+    .input-invalid {
+      border-color: rgba(182, 64, 45, 0.55) !important;
+      box-shadow: 0 0 0 4px rgba(182, 64, 45, 0.14) !important;
+      background: rgba(255, 245, 244, 0.96) !important;
+    }
+    button {
+      border-radius: 16px;
+      padding: 12px 16px;
+      background: rgba(255, 255, 255, 0.92);
+      transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+    }
+    button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(20, 33, 61, 0.22);
+      box-shadow: 0 10px 24px rgba(20, 33, 61, 0.08);
+    }
+    button.primary {
+      background: linear-gradient(135deg, #0f766e, #169e8d);
+      border-color: #0f766e;
+      color: #fff;
+      font-weight: 800;
+    }
+    .sources {
+      padding: 12px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.68);
+    }
+    .sources label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(20, 33, 61, 0.08);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .sources input {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
+    }
+    .metrics {
+      margin-bottom: 20px;
+      gap: 14px;
+    }
+    .card,
+    .filter-card {
+      border-radius: 22px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(242, 247, 252, 0.82));
+      border-color: rgba(20, 33, 61, 0.08);
+      box-shadow: 0 16px 34px rgba(20, 33, 61, 0.06);
+    }
+    .card .v {
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 24px;
+      letter-spacing: -0.04em;
+    }
+    .status-pill {
+      padding: 9px 14px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .logs {
+      margin-top: 18px;
+      min-height: 440px;
+      max-height: min(68vh, 860px);
+      border-radius: 22px;
+      padding: 22px;
+      border: 1px solid rgba(191, 219, 254, 0.14);
+      background: linear-gradient(180deg, rgba(7, 15, 27, 0.96), rgba(18, 28, 46, 0.98));
+      color: #d6e8ff;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      line-height: 1.6;
+    }
+    .toolbar {
+      gap: 14px;
+      margin-bottom: 6px;
+    }
+    .view-mode {
+      display: none;
+    }
+    .view-mode.active {
+      display: block;
+    }
+    .results-mode-switch {
+      margin-bottom: 14px;
+    }
+    .results-mode-switch .mode-btn {
+      min-width: 140px;
+    }
+    .toolbar > select,
+    .toolbar > input {
+      min-width: 180px;
+      flex: 1 1 180px;
+    }
+    .toolbar > button {
+      flex: 0 0 auto;
+    }
+    .mode-switch {
+      margin-bottom: 14px;
+    }
+    .mode-btn {
+      border-radius: 999px;
+      padding: 11px 16px;
+      font-weight: 700;
+    }
+    .mode-btn.active {
+      background: linear-gradient(135deg, rgba(15, 118, 110, 0.16), rgba(255, 255, 255, 0.96));
+      border-color: rgba(15, 118, 110, 0.3);
+      color: #0b5d58;
+    }
+    .filter-layout {
+      gap: 18px;
+      grid-template-columns: 1.18fr 0.82fr;
+    }
+    .filter-card {
+      padding: 24px;
+    }
+    .filter-card h3 {
+      margin: 0 0 8px;
+      font-family: "Segoe UI", Arial, sans-serif;
+      font-size: 20px;
+      letter-spacing: -0.03em;
+    }
+    .filter-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .filter-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .expr-box {
+      min-height: 196px;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      line-height: 1.55;
+    }
+    .builder-list {
+      margin: 12px 0;
+    }
+    .builder-chip {
+      padding: 8px 12px;
+      border-color: rgba(15, 118, 110, 0.2);
+      background: rgba(15, 118, 110, 0.1);
+      color: #0c5d57;
+      font-family: "Cascadia Mono", Consolas, monospace;
+    }
+    .status-box {
+      border-radius: 20px;
+      padding: 18px;
+      background: rgba(250, 251, 252, 0.92);
+    }
+    .code-inline {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 10px;
+      border-color: rgba(15, 118, 110, 0.14);
+      background: rgba(15, 118, 110, 0.08);
+      color: #0c5d57;
+      font-family: "Cascadia Mono", Consolas, monospace;
+    }
+    .table-wrap {
+      margin-top: 16px;
+      max-height: min(72vh, 980px);
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.74);
+      border-color: rgba(20, 33, 61, 0.08);
+    }
+    th, td {
+      padding: 13px 14px;
+      border-bottom-color: rgba(20, 33, 61, 0.08);
+    }
+    th {
+      background: #f6f8fb;
+      color: #294264;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    tbody tr:nth-child(even) {
+      background: rgba(244, 247, 250, 0.7);
+    }
+    .stats-strip {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .helper-list {
+      margin-top: 14px;
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    .muted {
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .section-note {
+      margin-top: 18px;
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(20, 33, 61, 0.04);
+      color: #40516b;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    @media (max-width: 1240px) {
+      .hero-top,
+      .filter-layout {
+        grid-template-columns: 1fr;
+      }
+      .tabs {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 980px) {
+      .shell {
+        width: calc(100vw - 8px);
+        padding: 10px 10px 24px;
+      }
+      .hero,
+      .panel {
+        border-radius: 24px;
+        padding: 20px;
+      }
+      .tabs {
+        grid-template-columns: 1fr;
+      }
+      .filter-grid,
+      .toolbar > select,
+      .toolbar > input,
+      .toolbar > button {
+        flex: 1 1 100%;
+      }
     }
   </style>
 </head>
 <body>
   <div class="shell">
     <div class="hero">
-      <h1>toolReadJson Web Console</h1>
-      <p>Web-first workflow: run async job, monitor progress, inspect case results, and download output optionally.</p>
       <div class="tabs">
-        <button class="tab-btn active" data-tab="run">Run Job</button>
-        <button class="tab-btn" data-tab="progress">Progress</button>
-        <button class="tab-btn" data-tab="results">Results</button>
-        <button class="tab-btn" data-tab="history">History</button>
+        <button class="tab-btn active" data-tab="run" type="button">
+          <span class="tab-step">01</span>
+          <span class="tab-copy">
+            <strong>Chạy Job</strong>
+            <small>Chọn môi trường, office, ngày và source.</small>
+          </span>
+        </button>
+        <button class="tab-btn" data-tab="progress" type="button">
+          <span class="tab-step">02</span>
+          <span class="tab-copy">
+            <strong>Theo Dõi</strong>
+            <small>Xem trạng thái, log và chỉ số xử lý.</small>
+          </span>
+        </button>
+        <button class="tab-btn" data-tab="filter" type="button">
+          <span class="tab-step">03</span>
+          <span class="tab-copy">
+            <strong>Lọc Case</strong>
+            <small>Dùng builder hoặc raw expression.</small>
+          </span>
+        </button>
+        <button class="tab-btn" data-tab="results" type="button">
+          <span class="tab-step">04</span>
+          <span class="tab-copy">
+            <strong>Kết Quả</strong>
+            <small>Tra cứu, đổi sheet và tải Excel.</small>
+          </span>
+        </button>
+        <button class="tab-btn" data-tab="history" type="button">
+          <span class="tab-step">05</span>
+          <span class="tab-copy">
+            <strong>Lịch Sử</strong>
+            <small>Mở lại job cũ hoặc tải lại output.</small>
+          </span>
+        </button>
       </div>
     </div>
 
     <section class="panel active" id="tab-run">
+      <div class="section-header">
+        <div>
+          <h2>Khởi tạo phiên xử lý</h2>
+          <p>Thiết lập đầu vào theo đúng phạm vi dữ liệu cần đọc. Job sẽ chạy nền nên người dùng có thể chuyển ngay sang màn hình theo dõi sau khi bấm chạy.</p>
+        </div>
+        <span class="section-tag">Step 1</span>
+      </div>
       <form id="run-form">
         <div class="grid">
           <div class="field">
-            <label>Environment</label>
+            <label>Môi trường</label>
             <select id="env"></select>
           </div>
           <div class="field">
@@ -240,19 +852,19 @@
             <select id="office"></select>
           </div>
           <div class="field">
-            <label>From Date (YYYYMMDD)</label>
+            <label>Từ ngày (YYYYMMDD)</label>
             <input id="from-date" value="20240901" />
           </div>
           <div class="field">
-            <label>To Date (YYYYMMDD)</label>
+            <label>Đến ngày (YYYYMMDD)</label>
             <input id="to-date" value="20260201" />
           </div>
           <div class="field">
-            <button class="primary" type="submit">Start Job</button>
+            <button class="primary" type="submit">Bắt đầu xử lý</button>
           </div>
         </div>
         <div class="field" style="margin-top:12px;">
-          <label>Source Types</label>
+          <label>Nguồn dữ liệu</label>
           <div class="sources">
             <label><input type="checkbox" value="FRT" checked /> FRT</label>
             <label><input type="checkbox" value="MRI" checked /> MRI</label>
@@ -261,13 +873,21 @@
           </div>
         </div>
       </form>
-      <p class="muted" id="run-msg">Ready.</p>
+      <div class="section-note">Checklist nhanh: chọn đúng môi trường, giới hạn khoảng ngày hợp lý và chỉ bật source thật sự cần dùng.</div>
+      <p class="muted" id="run-msg">Sẵn sàng nhận job mới.</p>
     </section>
 
     <section class="panel" id="tab-progress">
+      <div class="section-header">
+        <div>
+          <h2>Theo dõi tiến độ</h2>
+          <p>Tab này gom trạng thái job hiện tại, log nền và chỉ số xử lý để người dùng biết ngay pipeline đang ở bước nào.</p>
+        </div>
+        <span class="section-tag">Step 2</span>
+      </div>
       <div class="actions">
         <span id="job-status" class="status-pill">idle</span>
-        <span class="muted">Active Job: <b id="active-job-id">none</b></span>
+        <span class="muted">Job đang mở: <b id="active-job-id">none</b></span>
       </div>
       <div class="metrics">
         <div class="card"><div class="k">Tasks</div><div class="v" id="m-tasks">0 / 0</div></div>
@@ -279,38 +899,196 @@
     </section>
 
     <section class="panel" id="tab-results">
+      <div class="section-header">
+        <div>
+          <h2>Xem kết quả và xuất file</h2>
+          <p>Dùng sheet để đổi nhóm case, tìm nhanh trên trang hiện tại và tải file Excel theo đúng ngữ cảnh đang xem.</p>
+        </div>
+        <span class="section-tag">Step 4</span>
+      </div>
+      <div class="mode-switch results-mode-switch">
+        <button class="mode-btn active" id="results-view-rows" type="button">Rows</button>
+        <button class="mode-btn" id="results-view-grouped" type="button">Grouped</button>
+      </div>
       <div class="toolbar">
         <select id="sheet"></select>
-        <select id="search-field">
-          <option value="INV_NO">INV_NO</option>
-          <option value="ZZ_IF_ID">ZZ_IF_ID</option>
-        </select>
-        <input id="search-text" placeholder="Quick search..." />
-        <button id="btn-search">Search</button>
-        <button id="btn-refresh-sheets">Reload Sheets</button>
-        <button id="btn-download">Download Output</button>
+        <button id="btn-refresh-sheets" type="button">Nạp lại sheet</button>
+        <button id="btn-download" type="button">Xuất Excel</button>
       </div>
-      <div class="toolbar">
-        <select id="filter-column"></select>
-        <input id="filter-value" placeholder="Filter value..." />
-        <button id="btn-add-filter">Add Filter</button>
-        <button id="btn-clear-filters">Clear Filters</button>
+      <div id="results-row-controls" class="view-mode active">
+        <div class="toolbar">
+          <select id="search-field" disabled>
+            <option value="INV_NO">INV_NO</option>
+            <option value="ZZ_IF_ID">ZZ_IF_ID</option>
+          </select>
+          <input id="search-text" placeholder="Nạp kết quả để bật tìm kiếm..." maxlength="120" disabled />
+          <button id="btn-search" type="button" disabled>Tra cứu</button>
+        </div>
       </div>
-      <div class="chips" id="filter-chips"></div>
-      <p class="muted" id="results-msg">No data loaded.</p>
+      <div id="results-group-controls" class="view-mode">
+        <p class="muted" id="results-grouping-summary">Bật group condition ở tab Filter rồi bấm Áp filter để xem Grouped.</p>
+        <div class="toolbar">
+          <input id="group-search-text" placeholder="Tìm theo group key hoặc distinct values..." maxlength="120" />
+          <button id="btn-group-run" type="button">Tìm nhóm</button>
+          <button id="btn-group-reset" type="button">Xóa tìm nhóm</button>
+        </div>
+      </div>
+      <div class="stats-strip">
+        <span class="summary-chip" id="results-total">Total rows: 0</span>
+        <span class="summary-chip" id="results-filtered">Filtered rows: 0</span>
+        <span class="summary-chip" id="results-range">Rows: 0-0</span>
+      </div>
+      <p class="muted" id="results-msg">Chưa có dữ liệu để hiển thị.</p>
       <div class="table-wrap">
         <table id="results-table"></table>
       </div>
       <div class="toolbar" style="margin-top:8px;">
-        <button id="btn-prev">Prev</button>
-        <span class="muted" id="page-label">page 1</span>
-        <button id="btn-next">Next</button>
+        <button id="btn-prev" type="button">Trang trước</button>
+        <span class="muted" id="page-label">page 1 / 1</span>
+        <button id="btn-next" type="button">Trang sau</button>
+      </div>
+    </section>
+
+    <section class="panel" id="tab-filter">
+      <div class="section-header">
+        <div>
+          <h2>Lọc dữ liệu theo nghiệp vụ</h2>
+          <p>Bộ lọc toàn cục chạy trên <strong>All Sheets</strong> và thêm cột <span class="code-inline">SOURCE_SHEET</span> để người dùng truy dấu nguồn dữ liệu.</p>
+        </div>
+        <span class="section-tag">Step 3</span>
+      </div>
+      <div class="actions">
+        <span id="filter-status" class="status-pill">inactive</span>
+        <span class="muted">Ưu tiên dùng Builder nếu người dùng không quen cú pháp SQL-like.</span>
+      </div>
+      <div class="mode-switch">
+        <button class="mode-btn active" id="filter-mode-builder" type="button">Builder</button>
+        <button class="mode-btn" id="filter-mode-raw" type="button">Raw</button>
+      </div>
+      <div class="filter-layout">
+        <div class="filter-card">
+          <h3>Soạn điều kiện lọc</h3>
+          <p>Builder dành cho thao tác nhanh, Raw mode dành cho biểu thức dài hơn hoặc phức tạp hơn.</p>
+          <div id="filter-builder-panel" class="filter-mode active">
+            <div class="filter-grid">
+              <div class="field">
+                <label>Connector</label>
+                <select id="builder-connector">
+                  <option value="AND">AND</option>
+                  <option value="OR">OR</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Field</label>
+                <select id="builder-field"></select>
+              </div>
+              <div class="field">
+                <label>Operator</label>
+                <select id="builder-operator">
+                  <option value="=">=</option>
+                  <option value="!=">!=</option>
+                  <option value=">">&gt;</option>
+                  <option value=">=">&gt;=</option>
+                  <option value="<">&lt;</option>
+                  <option value="<=">&lt;=</option>
+                  <option value="IN">IN</option>
+                  <option value="NOT IN">NOT IN</option>
+                  <option value="LIKE">LIKE</option>
+                  <option value="NOT LIKE">NOT LIKE</option>
+                  <option value="IS NULL">IS NULL</option>
+                  <option value="IS NOT NULL">IS NOT NULL</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Value</label>
+                <input id="builder-value" placeholder="X hoặc FRT, MRI hoặc %123%" />
+              </div>
+              <div class="field">
+                <label>NOT wrapper</label>
+                <select id="builder-not">
+                  <option value="false">Tắt</option>
+                  <option value="true">NOT (...)</option>
+                </select>
+              </div>
+              <div class="field">
+                <button id="btn-builder-add" type="button">Thêm điều kiện</button>
+              </div>
+            </div>
+            <div class="toolbar muted">
+              <span>Builder sẽ tạo biểu thức SQL-like. Với <span class="code-inline">IN</span>, hãy ngăn cách giá trị bằng dấu phẩy.</span>
+            </div>
+            <div class="builder-list" id="builder-clauses"></div>
+            <label class="muted" for="builder-preview">Builder Preview</label>
+            <textarea id="builder-preview" class="expr-box" readonly></textarea>
+            <div class="toolbar" style="margin-top:10px;">
+              <button id="btn-builder-remove-last" type="button">Bỏ điều kiện cuối</button>
+              <button id="btn-builder-clear" type="button">Xóa builder</button>
+              <button id="btn-builder-copy" type="button">Đưa sang Raw</button>
+            </div>
+          </div>
+          <div id="filter-raw-panel" class="filter-mode">
+            <label class="muted" for="filter-expression">Raw Expression</label>
+            <textarea id="filter-expression" class="expr-box" placeholder="Ví dụ: MIG_FLG != X AND NOT (SUBPROCESS LIKE MR%)"></textarea>
+            <div class="toolbar" style="margin-top:10px;">
+              <button id="btn-raw-use-preview" type="button">Dùng preview từ Builder</button>
+            </div>
+          </div>
+        </div>
+        <div class="filter-card">
+          <h3>Kiểm tra và áp dụng</h3>
+          <p>Hệ thống sẽ validate tên cột, chuẩn hóa biểu thức và gợi ý khi nhập sai field.</p>
+          <div class="toolbar">
+            <button id="btn-filter-validate" type="button">Kiểm tra</button>
+            <button class="primary" id="btn-filter-apply" type="button">Áp filter</button>
+            <button id="btn-filter-clear" type="button">Xóa filter</button>
+          </div>
+          <div id="filter-feedback" class="status-box">Chưa có filter được áp dụng.</div>
+          <div class="toolbar muted" style="margin-top:10px;">
+            <span>Biểu thức đang áp dụng:</span>
+            <span class="code-inline" id="filter-applied-expression">(none)</span>
+          </div>
+          <div class="toolbar muted">
+            <span>Số field khả dụng:</span>
+            <span id="filter-field-count">0</span>
+          </div>
+          <div class="section-note">Group condition chạy theo sheet đang chọn ở tab Kết quả. Bật công tắc rồi bấm Áp filter để áp cùng với điều kiện lọc thường.</div>
+          <div class="toolbar">
+            <label class="muted"><input id="group-enabled" type="checkbox" /> Bật group condition</label>
+            <span class="muted">Sheet hiện tại: <span class="code-inline" id="grouping-sheet-context">(none)</span></span>
+          </div>
+          <div class="toolbar">
+            <select id="group-by-field" disabled>
+              <option value="">Group by field</option>
+            </select>
+            <select id="group-distinct-field" disabled>
+              <option value="">Distinct field</option>
+            </select>
+            <input id="group-min-distinct" type="number" min="2" value="2" disabled />
+          </div>
+          <div class="toolbar muted">
+            <span>Group condition đang áp dụng:</span>
+            <span class="code-inline" id="grouping-applied-summary">(none)</span>
+          </div>
+          <ul class="helper-list">
+            <li>Ví dụ: <span class="code-inline">MIG_FLG != X</span>, <span class="code-inline">CHG_AMT &gt; 0</span>, <span class="code-inline">NOT (MIG_FLG = X)</span></li>
+            <li>LIKE dùng wildcard <span class="code-inline">%</span> và <span class="code-inline">_</span>.</li>
+            <li>Ví dụ group: <span class="code-inline">INV_NO</span> + <span class="code-inline">CHG_CURR_CD</span> với min distinct = <span class="code-inline">2</span>.</li>
+            <li>Nếu gõ sai tên cột, hệ thống sẽ gợi ý tên gần đúng để sửa nhanh.</li>
+          </ul>
+        </div>
       </div>
     </section>
 
     <section class="panel" id="tab-history">
+      <div class="section-header">
+        <div>
+          <h2>Lịch sử chạy job</h2>
+          <p>Dùng danh sách này để mở lại một phiên đã chạy, so sánh số lượng case giữa các lần chạy và tải output mà không cần chạy lại pipeline.</p>
+        </div>
+        <span class="section-tag">Step 5</span>
+      </div>
       <div class="toolbar">
-        <button id="btn-history">Refresh History</button>
+        <button id="btn-history" type="button">Làm mới lịch sử</button>
       </div>
       <div class="table-wrap">
         <table id="history-table"></table>
@@ -318,7 +1096,7 @@
     </section>
   </div>
 
-  <script>
+  <script type="text/plain" id="legacy-web-script">
     const tabs = document.querySelectorAll(".tab-btn");
     const panels = {
       run: document.getElementById("tab-run"),
@@ -340,9 +1118,42 @@
       logOffset: 0,
       pollHandle: null,
       page: 1,
-      pageSize: 100,
-      filters: []
+      pageSize: 100
     };
+
+    function resetResultsQueryState() {
+      state.page = 1;
+      document.getElementById("search-text").value = "";
+      document.getElementById("group-search-text").value = "";
+      state.grouping.search = "";
+    }
+
+    function setPagingState(meta = {}) {
+      const page = meta.page || 1;
+      const totalPages = meta.total_pages || 1;
+      const from = meta.page_row_from || 0;
+      const to = meta.page_row_to || 0;
+      document.getElementById("page-label").textContent = `page ${page} / ${totalPages} â€¢ rows ${from}-${to}`;
+      document.getElementById("btn-prev").disabled = !meta.has_prev;
+      document.getElementById("btn-next").disabled = !meta.has_next;
+    }
+
+    function updateResultsStats(meta = {}) {
+      const total = meta.unfiltered_total || 0;
+      const filtered = meta.filtered_total || 0;
+      const from = meta.page_row_from || 0;
+      const to = meta.page_row_to || 0;
+      document.getElementById("results-total").textContent = `Total rows: ${total}`;
+      document.getElementById("results-filtered").textContent = `Matched rows: ${filtered}`;
+      document.getElementById("results-range").textContent = `Rows: ${from}-${to}`;
+    }
+
+    function resetResultsView(message = "No data loaded.") {
+      document.getElementById("results-table").innerHTML = "";
+      document.getElementById("results-msg").textContent = message;
+      updateResultsStats();
+      setPagingState({ page: 1, total_pages: 1, page_row_from: 0, page_row_to: 0, has_prev: false, has_next: false });
+    }
 
     async function api(path, opts = {}) {
       const res = await fetch(path, {
@@ -392,7 +1203,7 @@
         source_types: selectedSources()
       };
       const runMsg = document.getElementById("run-msg");
-      runMsg.textContent = "Submitting job...";
+      runMsg.textContent = "Dang tao job...";
       try {
         const out = await api("/api/v1/jobs", {
           method: "POST",
@@ -400,7 +1211,8 @@
         });
         state.activeJobId = out.job_id;
         state.logOffset = 0;
-        state.page = 1;
+        resetResultsQueryState();
+        resetResultsView("Waiting for result sheets...");
         document.getElementById("active-job-id").textContent = state.activeJobId;
         runMsg.textContent = `Job queued: ${state.activeJobId}`;
         document.getElementById("logs").textContent = "";
@@ -452,14 +1264,26 @@
       }
       try {
         const out = await api(`/api/v1/jobs/${state.activeJobId}/sheets`);
+        const items = Array.isArray(out.items)
+          ? out.items
+          : (out.sheets || []).map(x => typeof x === "string" ? { name: x, total_rows: 0 } : x);
         const sel = document.getElementById("sheet");
-        sel.innerHTML = out.sheets.map(x => `<option value="${x}">${x}</option>`).join("");
-        msg.textContent = `Loaded ${out.sheets.length} sheet(s).`;
-        if (out.sheets.length) {
-          state.page = 1;
+        const current = sel.value;
+        sel.innerHTML = items.map(x => `<option value="${x.name}">${x.name}</option>`).join("");
+        if (current && items.some(x => x.name === current)) {
+          sel.value = current;
+        }
+        msg.textContent = `Loaded ${items.length} sheet(s).`;
+        if (items.length) {
+          if (!current || !items.some(x => x.name === current)) {
+            resetResultsQueryState();
+          }
           await loadResults();
+        } else {
+          resetResultsView("No sheet data found.");
         }
       } catch (err) {
+        resetResultsView(`Cannot load sheets: ${err.message}`);
         msg.textContent = `Cannot load sheets: ${err.message}`;
       }
     }
@@ -483,25 +1307,44 @@
           page: String(state.page),
           page_size: String(state.pageSize),
           search,
-          search_field: searchField,
-          filters_json: JSON.stringify(state.filters)
+          search_field: searchField
         });
         const out = await api(`/api/v1/jobs/${state.activeJobId}/results?${q.toString()}`);
         const table = document.getElementById("results-table");
+        state.page = out.page || 1;
         syncColumnSelectors(out.columns);
         let thead = "<thead><tr>" + out.columns.map(c => `<th>${c}</th>`).join("") + "</tr></thead>";
         let rows = out.rows.map(r => "<tr>" + out.columns.map(c => `<td>${r[c] ?? ""}</td>`).join("") + "</tr>").join("");
         table.innerHTML = thead + `<tbody>${rows}</tbody>`;
-        msg.textContent = `Rows: ${out.total}`;
-        document.getElementById("page-label").textContent = `page ${out.page}`;
+        updateResultsStats(out);
+        setPagingState(out);
+        msg.textContent = out.filtered_total
+          ? `Showing ${out.page_row_from}-${out.page_row_to} of ${out.filtered_total} matched row(s).`
+          : "No rows matched this sheet/search.";
       } catch (err) {
+        resetResultsView(`Load results failed: ${err.message}`);
         msg.textContent = `Load results failed: ${err.message}`;
       }
     }
 
     async function loadHistory() {
       const out = await api("/api/v1/history");
-      const cols = ["job_id", "env", "office_code", "from_date", "to_date", "status", "created_at", "finished_at", "has_output"];
+      const cols = [
+        "job_id",
+        "env",
+        "office_code",
+        "from_date",
+        "to_date",
+        "status",
+        "single_case",
+        "split_case",
+        "split_case_manual",
+        "group_case",
+        "supplement_case",
+        "created_at",
+        "finished_at",
+        "has_output"
+      ];
       const table = document.getElementById("history-table");
       const thead = "<thead><tr>" + cols.map(c => `<th>${c}</th>`).join("") + "<th>actions</th></tr></thead>";
       const body = out.items.map(item => {
@@ -518,6 +1361,8 @@
     async function openJob(jobId) {
       state.activeJobId = jobId;
       state.logOffset = 0;
+      resetResultsQueryState();
+      resetResultsView("Loading job results...");
       document.getElementById("active-job-id").textContent = jobId;
       document.getElementById("logs").textContent = "";
       await pollJob();
@@ -554,63 +1399,19 @@
 
     function syncColumnSelectors(columns) {
       const searchSel = document.getElementById("search-field");
-      const filterSel = document.getElementById("filter-column");
       const currentSearch = searchSel.value;
-      const currentFilter = filterSel.value;
       if (!columns || !columns.length) return;
       searchSel.innerHTML = columns.map(c => `<option value="${c}">${c}</option>`).join("");
-      filterSel.innerHTML = columns.map(c => `<option value="${c}">${c}</option>`).join("");
       if (columns.includes(currentSearch)) searchSel.value = currentSearch;
-      if (columns.includes(currentFilter)) filterSel.value = currentFilter;
-    }
-
-    function renderFilterChips() {
-      const box = document.getElementById("filter-chips");
-      if (!state.filters.length) {
-        box.innerHTML = "";
-        return;
-      }
-      box.innerHTML = state.filters.map((f, i) => (
-        `<span class="chip">${f.field}: ${f.value}<button data-idx="${i}" title="Remove">x</button></span>`
-      )).join("");
-      box.querySelectorAll("button[data-idx]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const idx = Number(btn.getAttribute("data-idx"));
-          state.filters.splice(idx, 1);
-          renderFilterChips();
-          state.page = 1;
-          loadResults();
-        });
-      });
-    }
-
-    function addFilter() {
-      const col = document.getElementById("filter-column").value;
-      const val = document.getElementById("filter-value").value.trim();
-      if (!col || !val) return;
-      state.filters.push({ field: col, value: val });
-      document.getElementById("filter-value").value = "";
-      renderFilterChips();
-      state.page = 1;
-      loadResults();
     }
 
     document.getElementById("run-form").addEventListener("submit", startJob);
     document.getElementById("btn-search").addEventListener("click", () => { state.page = 1; loadResults(); });
-    document.getElementById("filter-value").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        addFilter();
-      }
-    });
-    document.getElementById("btn-refresh-sheets").addEventListener("click", loadSheets);
-    document.getElementById("btn-add-filter").addEventListener("click", addFilter);
-    document.getElementById("btn-clear-filters").addEventListener("click", () => {
-      state.filters = [];
-      renderFilterChips();
-      state.page = 1;
+    document.getElementById("sheet").addEventListener("change", () => {
+      resetResultsQueryState();
       loadResults();
     });
+    document.getElementById("btn-refresh-sheets").addEventListener("click", loadSheets);
     document.getElementById("btn-download").addEventListener("click", () => {
       if (!state.activeJobId) return;
       downloadJob(state.activeJobId);
@@ -622,13 +1423,1535 @@
       }
     });
     document.getElementById("btn-next").addEventListener("click", () => {
-      state.page += 1;
-      loadResults();
+      if (!document.getElementById("btn-next").disabled) {
+        state.page += 1;
+        loadResults();
+      }
     });
     document.getElementById("btn-history").addEventListener("click", loadHistory);
 
+    resetResultsView();
     loadMeta();
     loadHistory();
   </script>
+  <script>
+    const tabs = [...document.querySelectorAll(".tab-btn")];
+    const panels = {
+      run: document.getElementById("tab-run"),
+      progress: document.getElementById("tab-progress"),
+      filter: document.getElementById("tab-filter"),
+      results: document.getElementById("tab-results"),
+      history: document.getElementById("tab-history")
+    };
+
+    function defaultFilterState() {
+      return {
+        mode: "builder",
+        active: false,
+        appliedExpression: "",
+        builderClauses: [],
+        lastValidated: null
+      };
+    }
+
+    function defaultGroupingState() {
+      return {
+        enabled: false,
+        groupField: "INV_NO",
+        distinctField: "CURR",
+        minDistinct: 2,
+        applied: null,
+        search: ""
+      };
+    }
+
+    const state = {
+      activeJobId: null,
+      logOffset: 0,
+      pollHandle: null,
+      page: 1,
+      pageSize: 100,
+      resultsView: "rows",
+      sheetItems: [],
+      allSheetsName: "__ALL_SHEETS__",
+      currentResult: null,
+      rowResult: null,
+      groupResult: null,
+      availableColumns: [],
+      filter: defaultFilterState(),
+      grouping: defaultGroupingState()
+    };
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/'/g, "&#39;");
+    }
+
+    function activateTab(tabName) {
+      tabs.forEach(btn => btn.classList.toggle("active", btn.dataset.tab === tabName));
+      Object.entries(panels).forEach(([name, panel]) => {
+        panel.classList.toggle("active", name === tabName);
+      });
+    }
+
+    tabs.forEach(btn => {
+      btn.addEventListener("click", () => activateTab(btn.dataset.tab));
+    });
+
+    function extractErrorMessage(payload, status) {
+      if (payload && typeof payload === "object") {
+        const detail = payload.detail ?? payload;
+        if (typeof detail === "string") return detail;
+        if (detail && typeof detail === "object") {
+          const parts = [];
+          if (detail.message) parts.push(detail.message);
+          if (Array.isArray(detail.errors) && detail.errors.length) parts.push(detail.errors.join("; "));
+          if (Array.isArray(detail.suggestions) && detail.suggestions.length) {
+            parts.push(`Suggestions: ${detail.suggestions.join(", ")}`);
+          }
+          if (parts.length) return parts.join(" | ");
+        }
+        return JSON.stringify(detail);
+      }
+      if (typeof payload === "string" && payload.trim()) return payload.trim();
+      return `HTTP ${status}`;
+    }
+
+    async function api(url, options = {}) {
+      const init = {
+        method: options.method || "GET",
+        headers: {
+          ...(options.body ? { "Content-Type": "application/json" } : {}),
+          ...(options.headers || {})
+        }
+      };
+      if (Object.prototype.hasOwnProperty.call(options, "body")) {
+        init.body = options.body;
+      }
+      const res = await fetch(url, init);
+      const contentType = res.headers.get("content-type") || "";
+      const payload = contentType.includes("application/json")
+        ? await res.json().catch(() => ({}))
+        : await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(extractErrorMessage(payload, res.status));
+      }
+      return payload;
+    }
+
+    function formatNumber(value) {
+      return Number(value || 0).toLocaleString();
+    }
+
+    function formatVietnamDateTime(value) {
+      const text = String(value ?? "").trim();
+      if (!text) return "";
+      const match = text.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/);
+      if (match) {
+        const [, year, month, day, hour, minute, second = "00"] = match;
+        return `${day}/${month}/${year} ${hour}:${minute}:${second}`;
+      }
+      const parsed = new Date(text);
+      if (Number.isNaN(parsed.getTime())) return text;
+      return new Intl.DateTimeFormat("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+      }).format(parsed).replace(",", "");
+    }
+
+    function setInputValidity(el, message = "") {
+      if (!el) return;
+      el.setCustomValidity(message);
+      el.classList.toggle("input-invalid", Boolean(message));
+    }
+
+    function clearResultsSearchValidation() {
+      setInputValidity(document.getElementById("sheet"));
+      setInputValidity(document.getElementById("search-field"));
+      setInputValidity(document.getElementById("search-text"));
+    }
+
+    function setStatusPill(status) {
+      const el = document.getElementById("job-status");
+      const labels = {
+        idle: "Chua chay",
+        queued: "Dang cho",
+        pending: "Dang cho",
+        running: "Dang xu ly",
+        succeeded: "Hoan tat",
+        failed: "That bai"
+      };
+      el.textContent = labels[status] || status || "Chua chay";
+      el.className = "status-pill";
+      if (status === "running") el.style.background = "#eef4ff";
+      else if (status === "succeeded") el.style.background = "#eefbf4";
+      else if (status === "failed") el.style.background = "#fff2f1";
+      else if (status === "queued" || status === "pending") el.style.background = "#edf4ff";
+      else el.style.background = "#f3f5f8";
+    }
+
+    function setFilterStatus(active) {
+      const el = document.getElementById("filter-status");
+      el.textContent = active ? "Dang ap dung" : "Chua ap dung";
+      el.style.background = active ? "#eefbf4" : "#f3f5f8";
+    }
+
+    function setFilterFeedback(message, tone = "warn") {
+      const el = document.getElementById("filter-feedback");
+      el.className = `status-box ${tone === "ok" ? "status-ok" : tone === "error" ? "status-error" : "status-warn"}`;
+      el.textContent = message;
+    }
+
+    function setFilterMode(mode) {
+      state.filter.mode = mode === "raw" ? "raw" : "builder";
+      document.getElementById("filter-mode-builder").classList.toggle("active", state.filter.mode === "builder");
+      document.getElementById("filter-mode-raw").classList.toggle("active", state.filter.mode === "raw");
+      document.getElementById("filter-builder-panel").classList.toggle("active", state.filter.mode === "builder");
+      document.getElementById("filter-raw-panel").classList.toggle("active", state.filter.mode === "raw");
+    }
+
+    function syncAppliedFilterState() {
+      state.filter.active = Boolean(
+        String(state.filter.appliedExpression || "").trim() ||
+        state.grouping.applied
+      );
+    }
+
+    function describeGroupingConfig(config) {
+      if (!config) return "(none)";
+      return `${config.groupField} -> ${config.distinctField}, min distinct = ${formatNumber(config.minDistinct)}`;
+    }
+
+    function currentSheetLabel() {
+      const selected = currentSheetValue();
+      const item = state.sheetItems.find(entry => entry.name === selected);
+      return item?.label || selected || "(none)";
+    }
+
+    function updateGroupingSheetContext() {
+      document.getElementById("grouping-sheet-context").textContent = currentSheetLabel();
+    }
+
+    function getAppliedGroupingConfig() {
+      return state.grouping.applied;
+    }
+
+    function updateAppliedFilterUi() {
+      syncAppliedFilterState();
+      setFilterStatus(state.filter.active);
+      document.getElementById("filter-applied-expression").textContent = state.filter.appliedExpression || "(none)";
+      document.getElementById("grouping-applied-summary").textContent = describeGroupingConfig(state.grouping.applied);
+      document.getElementById("results-grouping-summary").textContent = state.grouping.applied
+        ? `Đang áp group condition trên ${currentSheetLabel()}: ${describeGroupingConfig(state.grouping.applied)}`
+        : "Bật group condition ở tab Filter rồi bấm Áp filter để xem Grouped.";
+      updateGroupingSheetContext();
+      syncGroupedSearchState();
+    }
+
+    function defaultNonVirtualSheet() {
+      const preferred = state.sheetItems.find(item => !item.is_virtual);
+      return preferred ? preferred.name : (state.sheetItems[0]?.name || "");
+    }
+
+    function currentSheetValue() {
+      const selected = document.getElementById("sheet").value;
+      return selected || defaultNonVirtualSheet();
+    }
+
+    function renderSheetOptions(preferredSheet = "") {
+      const sel = document.getElementById("sheet");
+      const current = sel.value;
+      sel.innerHTML = state.sheetItems.map(item => {
+        const label = `${item.label || item.name} (${formatNumber(item.total_rows)} rows)`;
+        return `<option value="${escapeAttr(item.name)}">${escapeHtml(label)}</option>`;
+      }).join("");
+
+      let nextValue = "";
+      if (preferredSheet && state.sheetItems.some(item => item.name === preferredSheet)) nextValue = preferredSheet;
+      else if (current && state.sheetItems.some(item => item.name === current)) nextValue = current;
+      else nextValue = defaultNonVirtualSheet();
+      if (nextValue) sel.value = nextValue;
+      sel.disabled = false;
+      updateGroupingSheetContext();
+    }
+
+    function currentSheetColumns() {
+      const activeSheet = currentSheetValue() || defaultNonVirtualSheet();
+      const item = state.sheetItems.find(entry => entry.name === activeSheet);
+      return Array.isArray(item?.columns) ? item.columns.filter(Boolean) : [];
+    }
+
+    function syncSearchControlsState(columns = []) {
+      const searchSel = document.getElementById("search-field");
+      const searchText = document.getElementById("search-text");
+      const searchBtn = document.getElementById("btn-search");
+      const enabled =
+        state.resultsView === "rows" &&
+        Boolean(state.activeJobId) &&
+        Boolean(currentSheetValue()) &&
+        Array.isArray(columns) &&
+        columns.length > 0;
+      searchSel.disabled = !enabled;
+      searchText.disabled = !enabled;
+      searchBtn.disabled = !enabled;
+      searchText.placeholder = enabled
+        ? "Tìm nhanh trong trang hiện tại..."
+        : "Nạp kết quả để bật tìm kiếm...";
+      if (!enabled) {
+        searchText.value = "";
+      }
+    }
+
+    function syncSearchFieldOptions(columns) {
+      const searchSel = document.getElementById("search-field");
+      const current = searchSel.value;
+      const list = Array.isArray(columns) ? columns.filter(Boolean) : [];
+      if (!list.length) {
+        searchSel.innerHTML = `<option value="">Chua co cot tim kiem</option>`;
+        searchSel.value = "";
+        syncSearchControlsState([]);
+        return;
+      }
+      searchSel.innerHTML = list.map(col => `<option value="${escapeAttr(col)}">${escapeHtml(col)}</option>`).join("");
+      searchSel.value = list.includes(current) ? current : list[0];
+      syncSearchControlsState(list);
+    }
+
+    function clearGroupingValidation() {
+      setInputValidity(document.getElementById("group-by-field"));
+      setInputValidity(document.getElementById("group-distinct-field"));
+      setInputValidity(document.getElementById("group-min-distinct"));
+    }
+
+    function preferredGroupField(columns) {
+      if (!columns.length) return "";
+      if (columns.includes(state.grouping.groupField)) return state.grouping.groupField;
+      if (columns.includes("INV_NO")) return "INV_NO";
+      return columns[0];
+    }
+
+    function preferredDistinctField(columns, groupField) {
+      const candidates = columns.filter(col => col !== groupField);
+      if (!candidates.length) return "";
+      if (candidates.includes(state.grouping.distinctField)) return state.grouping.distinctField;
+      if (candidates.includes("CURR")) return "CURR";
+      const currencyLike = candidates.find(col => /CURR/i.test(col));
+      if (currencyLike) return currencyLike;
+      return candidates[0];
+    }
+
+    function syncGroupingControlsState(columns = currentSheetColumns()) {
+      const toggle = document.getElementById("group-enabled");
+      const groupSel = document.getElementById("group-by-field");
+      const distinctSel = document.getElementById("group-distinct-field");
+      const minInput = document.getElementById("group-min-distinct");
+      const list = Array.isArray(columns) ? columns.filter(Boolean) : [];
+      const canConfigure = Boolean(state.activeJobId) && Boolean(currentSheetValue()) && list.length > 1;
+
+      if (!list.length) {
+        groupSel.innerHTML = `<option value="">Chưa có field nhóm</option>`;
+        distinctSel.innerHTML = `<option value="">Chưa có field distinct</option>`;
+        toggle.checked = Boolean(state.grouping.enabled);
+        toggle.disabled = true;
+        groupSel.disabled = true;
+        distinctSel.disabled = true;
+        minInput.disabled = true;
+        updateGroupingSheetContext();
+        syncGroupedSearchState();
+        return;
+      }
+
+      const nextGroupField = preferredGroupField(list);
+      state.grouping.groupField = nextGroupField;
+      groupSel.innerHTML = list.map(col => `<option value="${escapeAttr(col)}">${escapeHtml(col)}</option>`).join("");
+      groupSel.value = nextGroupField;
+
+      const distinctCandidates = list.filter(col => col !== nextGroupField);
+      const nextDistinctField = preferredDistinctField(list, nextGroupField);
+      state.grouping.distinctField = nextDistinctField;
+      distinctSel.innerHTML = distinctCandidates.length
+        ? distinctCandidates.map(col => `<option value="${escapeAttr(col)}">${escapeHtml(col)}</option>`).join("")
+        : `<option value="">Không có field distinct khả dụng</option>`;
+      if (nextDistinctField && distinctCandidates.includes(nextDistinctField)) {
+        distinctSel.value = nextDistinctField;
+      }
+
+      minInput.value = String(Math.max(2, Number(state.grouping.minDistinct || 2)));
+      toggle.checked = Boolean(state.grouping.enabled);
+      toggle.disabled = !canConfigure;
+      const enabled = canConfigure && Boolean(state.grouping.enabled);
+      groupSel.disabled = !enabled;
+      distinctSel.disabled = !enabled || distinctCandidates.length === 0;
+      minInput.disabled = !enabled;
+      updateGroupingSheetContext();
+      syncGroupedSearchState();
+    }
+
+    function syncGroupedSearchState() {
+      const searchInput = document.getElementById("group-search-text");
+      const runBtn = document.getElementById("btn-group-run");
+      const resetBtn = document.getElementById("btn-group-reset");
+      const activeGrouping = getAppliedGroupingConfig();
+      const enabled =
+        state.resultsView === "grouped" &&
+        Boolean(state.activeJobId) &&
+        Boolean(currentSheetValue()) &&
+        Boolean(activeGrouping);
+      searchInput.disabled = !enabled;
+      runBtn.disabled = !enabled;
+      resetBtn.disabled = !enabled && !searchInput.value.trim();
+      searchInput.placeholder = enabled
+        ? "Tìm theo group key hoặc distinct values..."
+        : "Bật group condition ở tab Filter để xem Grouped...";
+    }
+
+    function validateGroupingOptions({ showFeedback = true } = {}) {
+      clearGroupingValidation();
+      if (!state.grouping.enabled) {
+        return { enabled: false, valid: true, config: null };
+      }
+      const groupSel = document.getElementById("group-by-field");
+      const distinctSel = document.getElementById("group-distinct-field");
+      const minInput = document.getElementById("group-min-distinct");
+      const columns = currentSheetColumns();
+      const minDistinct = Number(minInput.value || 0);
+
+      if (!state.activeJobId) {
+        setInputValidity(groupSel, "Hãy mở hoặc chạy một job trước.");
+        if (showFeedback) setFilterFeedback("Hãy mở hoặc chạy một job trước khi cấu hình group condition.", "error");
+        return { enabled: true, valid: false, config: null };
+      }
+      if (!currentSheetValue()) {
+        setInputValidity(document.getElementById("sheet"), "Hãy chọn sheet trước.");
+        if (showFeedback) setFilterFeedback("Hãy chọn sheet trước khi cấu hình group condition.", "error");
+        return { enabled: true, valid: false, config: null };
+      }
+      if (!columns.length) {
+        setInputValidity(groupSel, "Chưa có field để group.");
+        if (showFeedback) setFilterFeedback("Chưa có field để group. Hãy nạp sheet trước.", "error");
+        return { enabled: true, valid: false, config: null };
+      }
+      if (!groupSel.value || !columns.includes(groupSel.value)) {
+        setInputValidity(groupSel, "Field group không hợp lệ.");
+        if (showFeedback) setFilterFeedback("Hãy chọn field group hợp lệ.", "error");
+        return { enabled: true, valid: false, config: null };
+      }
+      if (!distinctSel.value || !columns.includes(distinctSel.value)) {
+        setInputValidity(distinctSel, "Field distinct không hợp lệ.");
+        if (showFeedback) setFilterFeedback("Hãy chọn field distinct hợp lệ.", "error");
+        return { enabled: true, valid: false, config: null };
+      }
+      if (groupSel.value === distinctSel.value) {
+        setInputValidity(distinctSel, "Field distinct phải khác field group.");
+        if (showFeedback) setFilterFeedback("Field distinct phải khác field group.", "error");
+        return { enabled: true, valid: false, config: null };
+      }
+      if (!Number.isFinite(minDistinct) || minDistinct < 2) {
+        setInputValidity(minInput, "Min distinct phải từ 2 trở lên.");
+        if (showFeedback) setFilterFeedback("Min distinct phải từ 2 trở lên.", "error");
+        return { enabled: true, valid: false, config: null };
+      }
+
+      state.grouping.groupField = groupSel.value;
+      state.grouping.distinctField = distinctSel.value;
+      state.grouping.minDistinct = minDistinct;
+      return {
+        enabled: true,
+        valid: true,
+        config: {
+          groupField: groupSel.value,
+          distinctField: distinctSel.value,
+          minDistinct
+        }
+      };
+    }
+
+    function setResultsView(mode) {
+      state.resultsView = mode === "grouped" ? "grouped" : "rows";
+      document.getElementById("results-view-rows").classList.toggle("active", state.resultsView === "rows");
+      document.getElementById("results-view-grouped").classList.toggle("active", state.resultsView === "grouped");
+      document.getElementById("results-row-controls").classList.toggle("active", state.resultsView === "rows");
+      document.getElementById("results-group-controls").classList.toggle("active", state.resultsView === "grouped");
+
+      if (state.resultsView === "rows") {
+        syncSearchFieldOptions(state.rowResult?.columns || currentSheetColumns());
+      } else {
+        syncSearchControlsState([]);
+      }
+      syncGroupedSearchState();
+    }
+
+    function validateResultsSearchOptions({ requireLoadedResults = true, requireKeyword = false } = {}) {
+      clearResultsSearchValidation();
+      const msg = document.getElementById("results-msg");
+      const sheetSel = document.getElementById("sheet");
+      const searchSel = document.getElementById("search-field");
+      const searchText = document.getElementById("search-text");
+      const query = searchText.value.trim();
+      const columns = Array.isArray(state.rowResult?.columns) ? state.rowResult.columns : [];
+
+      if (!state.activeJobId) {
+        setInputValidity(searchText, "Hay mo hoac chay mot job truoc khi tra cuu.");
+        msg.textContent = "Hay mo hoac chay mot job truoc khi tra cuu.";
+        return false;
+      }
+
+      if (!currentSheetValue()) {
+        setInputValidity(sheetSel, "Hay chon sheet truoc khi tra cuu.");
+        msg.textContent = "Hay chon sheet truoc khi tra cuu.";
+        return false;
+      }
+
+      if (requireLoadedResults && !columns.length) {
+        setInputValidity(searchSel, "Chua co cot tim kiem. Hay nap ket qua truoc.");
+        msg.textContent = "Chua co cot tim kiem. Hay nap ket qua truoc.";
+        return false;
+      }
+
+      if (columns.length && (!searchSel.value || !columns.includes(searchSel.value))) {
+        setInputValidity(searchSel, "Cot tim kiem khong hop le.");
+        msg.textContent = "Hay chon mot cot tim kiem hop le.";
+        searchSel.value = columns[0];
+        return false;
+      }
+
+      if (query.length > 120) {
+        setInputValidity(searchText, "Tu khoa tim kiem toi da 120 ky tu.");
+        msg.textContent = "Tu khoa tim kiem toi da 120 ky tu.";
+        return false;
+      }
+
+      if (requireKeyword && !query) {
+        setInputValidity(searchText, "Hay nhap tu khoa can tim.");
+        msg.textContent = "Hay nhap tu khoa can tim.";
+        return false;
+      }
+
+      return true;
+    }
+
+    function handleQuickSearch({ requireKeyword = false } = {}) {
+      if (!validateResultsSearchOptions({ requireLoadedResults: true, requireKeyword })) {
+        return;
+      }
+      if (state.rowResult) {
+        state.page = 1;
+        renderResultsPayload(state.rowResult);
+      }
+    }
+
+    function populateBuilderFields(columns) {
+      state.availableColumns = Array.isArray(columns) ? columns : [];
+      const fieldSel = document.getElementById("builder-field");
+      if (state.availableColumns.length) {
+        fieldSel.innerHTML = state.availableColumns
+          .map(col => `<option value="${escapeAttr(col)}">${escapeHtml(col)}</option>`)
+          .join("");
+      } else {
+        fieldSel.innerHTML = `<option value="">Chua co field</option>`;
+      }
+      document.getElementById("filter-field-count").textContent = String(state.availableColumns.length);
+    }
+
+    function resetResultsQueryState() {
+      state.page = 1;
+      document.getElementById("search-text").value = "";
+    }
+
+    function invalidateResultCaches() {
+      state.currentResult = null;
+      state.rowResult = null;
+      state.groupResult = null;
+    }
+
+    function invalidateGroupedResultCache() {
+      state.groupResult = null;
+      if (state.resultsView === "grouped") {
+        state.currentResult = null;
+      }
+      syncGroupedSearchState();
+    }
+
+    function setPagingState(meta = {}) {
+      const page = meta.page || 1;
+      const totalPages = meta.total_pages || 1;
+      document.getElementById("page-label").textContent = `trang ${page} / ${totalPages}`;
+      document.getElementById("btn-prev").disabled = !meta.has_prev;
+      document.getElementById("btn-next").disabled = !meta.has_next;
+    }
+
+    function updateResultsStats(meta = {}) {
+      if (meta.mode === "grouped") {
+        const from = meta.page_row_from || 0;
+        const to = meta.page_row_to || 0;
+        document.getElementById("results-total").textContent = `Tổng dòng nguồn: ${formatNumber(meta.source_rows_total || 0)}`;
+        document.getElementById("results-filtered").textContent = `Dòng sau filter: ${formatNumber(meta.source_rows_filtered || 0)}`;
+        document.getElementById("results-range").textContent = `Nhóm khớp: ${formatNumber(from)}-${formatNumber(to)} / ${formatNumber(meta.filtered_total || 0)}`;
+        return;
+      }
+      const total = meta.unfiltered_total || 0;
+      const filtered = meta.filtered_total || 0;
+      const from = meta.page_row_from || 0;
+      const to = meta.page_row_to || 0;
+      document.getElementById("results-total").textContent = `Tong dong: ${formatNumber(total)}`;
+      document.getElementById("results-filtered").textContent = `Sau filter: ${formatNumber(filtered)}`;
+      document.getElementById("results-range").textContent = `Dang hien thi: ${formatNumber(from)}-${formatNumber(to)} / ${formatNumber(filtered)}`;
+    }
+
+    function resetResultsView(message = "Chua co du lieu de hien thi.") {
+      invalidateResultCaches();
+      document.getElementById("results-table").innerHTML = "";
+      document.getElementById("results-msg").textContent = message;
+      updateResultsStats({});
+      setPagingState({ page: 1, total_pages: 1, has_prev: false, has_next: false });
+      syncSearchFieldOptions([]);
+      syncGroupingControlsState([]);
+      syncGroupedSearchState();
+      clearResultsSearchValidation();
+      clearGroupingValidation();
+      setInputValidity(document.getElementById("group-search-text"));
+    }
+
+    function renderResultsTable(columns, rows) {
+      const table = document.getElementById("results-table");
+      if (!columns || !columns.length) {
+        table.innerHTML = "";
+        return;
+      }
+      const thead = "<thead><tr>" + columns.map(col => `<th>${escapeHtml(col)}</th>`).join("") + "</tr></thead>";
+      const bodyRows = rows.map(row => {
+        const cells = columns.map(col => `<td>${escapeHtml(row?.[col] ?? "")}</td>`).join("");
+        return `<tr>${cells}</tr>`;
+      }).join("");
+      table.innerHTML = `${thead}<tbody>${bodyRows}</tbody>`;
+    }
+
+    function applyQuickSearch(rows, columns) {
+      const needle = document.getElementById("search-text").value.trim().toLowerCase();
+      if (!needle) return rows;
+      if (!columns || !columns.length) return rows;
+      let field = document.getElementById("search-field").value;
+      if (!columns.includes(field)) field = columns[0];
+      if (!field) return rows;
+      return rows.filter(row => String(row?.[field] ?? "").toLowerCase().includes(needle));
+    }
+
+    function renderResultsPayload(payload) {
+      state.rowResult = payload;
+      state.currentResult = payload;
+      clearResultsSearchValidation();
+      syncSearchFieldOptions(payload.columns || []);
+      if (payload.normalized_filter_expression !== undefined) {
+        state.filter.appliedExpression = payload.normalized_filter_expression;
+        updateAppliedFilterUi();
+      }
+
+      const rows = applyQuickSearch(payload.rows || [], payload.columns || []);
+      renderResultsTable(payload.columns || [], rows);
+      updateResultsStats(payload);
+      setPagingState(payload);
+
+      const quickSearch = document.getElementById("search-text").value.trim();
+      const notes = [];
+      if (payload.normalized_filter_expression) {
+        notes.push(`Filter dang ap dung: ${payload.normalized_filter_expression}`);
+      }
+      if (payload.group_enabled) {
+        notes.push(`Group condition: ${payload.group_field} -> ${payload.distinct_field}, min distinct = ${formatNumber(payload.min_distinct || 0)}`);
+      }
+      const filterNote = notes.length ? ` ${notes.join(" | ")}` : "";
+      if (quickSearch) {
+        document.getElementById("results-msg").textContent =
+          `Tim nhanh khop ${formatNumber(rows.length)} dong tren trang hien tai. Tong so dong backend van la ${formatNumber(payload.filtered_total)}.${filterNote}`;
+      } else if (payload.filtered_total) {
+        document.getElementById("results-msg").textContent =
+          `Dang hien thi ${formatNumber(payload.page_row_from)}-${formatNumber(payload.page_row_to)} tren tong ${formatNumber(payload.filtered_total)} dong.${filterNote}`;
+      } else {
+        document.getElementById("results-msg").textContent = `Khong tim thay dong nao cho bo loc hien tai.${filterNote}`;
+      }
+    }
+
+    function renderGroupedResultsPayload(payload) {
+      state.groupResult = payload;
+      state.currentResult = payload;
+      syncGroupedSearchState();
+      renderResultsTable(payload.columns || [], payload.rows || []);
+      updateResultsStats(payload);
+      setPagingState(payload);
+
+      const notes = [];
+      if (payload.normalized_filter_expression) {
+        notes.push(`Filter đang áp dụng: ${payload.normalized_filter_expression}`);
+      }
+      if (payload.group_enabled) {
+        notes.push(`Group condition: ${payload.group_field} -> ${payload.distinct_field}, min distinct = ${formatNumber(payload.min_distinct || 0)}`);
+      }
+      const filterNote = notes.length ? ` ${notes.join(" | ")}` : "";
+      const searchNote = payload.search
+        ? ` | Tìm nhóm: ${payload.search}`
+        : "";
+      if (payload.filtered_total) {
+        document.getElementById("results-msg").textContent =
+          `Đang hiển thị ${formatNumber(payload.page_row_from)}-${formatNumber(payload.page_row_to)} trên tổng ${formatNumber(payload.filtered_total)} nhóm. Group by ${payload.group_field}, distinct theo ${payload.distinct_field}, min distinct = ${formatNumber(payload.min_distinct)}.${searchNote}${filterNote}`;
+      } else {
+        document.getElementById("results-msg").textContent =
+          `Không có nhóm nào khớp. Group by ${payload.group_field}, distinct theo ${payload.distinct_field}, min distinct = ${formatNumber(payload.min_distinct)}.${searchNote}${filterNote}`;
+      }
+    }
+
+    function selectedSources() {
+      return [...document.querySelectorAll(".sources input:checked")].map(x => x.value);
+    }
+
+    function syncBuilderValueMode() {
+      const operator = document.getElementById("builder-operator").value;
+      const input = document.getElementById("builder-value");
+      const noValue = operator === "IS NULL" || operator === "IS NOT NULL";
+      input.disabled = noValue;
+      if (noValue) {
+        input.value = "";
+        input.placeholder = "Khong can gia tri";
+      } else if (operator === "IN" || operator === "NOT IN") {
+        input.placeholder = "FRT, MRI";
+      } else if (operator === "LIKE" || operator === "NOT LIKE") {
+        input.placeholder = "%123%";
+      } else {
+        input.placeholder = "X hoac 100";
+      }
+    }
+
+    function formatBuilderLiteral(value) {
+      const text = String(value ?? "").trim();
+      if (!text) return "''";
+      if (/^NULL$/i.test(text)) return "NULL";
+      if (/^-?\d+(?:\.\d+)?$/.test(text)) return text;
+      if (/^[A-Za-z0-9_%./:-]+$/.test(text)) return text;
+      return `'${text.replace(/'/g, "''")}'`;
+    }
+
+    function buildClauseExpression(clause) {
+      const field = clause.field;
+      const operator = clause.operator;
+      let expression = `${field} ${operator}`;
+      if (operator === "IN" || operator === "NOT IN") {
+        const values = String(clause.value || "")
+          .split(",")
+          .map(item => item.trim())
+          .filter(Boolean)
+          .map(formatBuilderLiteral);
+        expression = `${field} ${operator} (${values.join(", ")})`;
+      } else if (operator !== "IS NULL" && operator !== "IS NOT NULL") {
+        expression = `${field} ${operator} ${formatBuilderLiteral(clause.value)}`;
+      }
+      return clause.not ? `NOT (${expression})` : expression;
+    }
+
+    function renderBuilderClauses() {
+      const container = document.getElementById("builder-clauses");
+      if (!state.filter.builderClauses.length) {
+        container.innerHTML = `<span class="muted">Chua co dieu kien nao.</span>`;
+        return;
+      }
+      container.innerHTML = state.filter.builderClauses.map((clause, index) => {
+        const prefix = index === 0 ? "" : `${clause.connector} `;
+        return `
+          <span class="builder-chip">
+            ${escapeHtml(prefix + buildClauseExpression(clause))}
+            <button type="button" data-remove-index="${index}" aria-label="Remove clause">x</button>
+          </span>
+        `;
+      }).join("");
+    }
+
+    function rebuildBuilderPreview() {
+      const preview = state.filter.builderClauses.map((clause, index) => {
+        const prefix = index === 0 ? "" : `${clause.connector} `;
+        return `${prefix}${buildClauseExpression(clause)}`;
+      }).join(" ");
+      document.getElementById("builder-preview").value = preview;
+      renderBuilderClauses();
+    }
+
+    function resetFilterEditor() {
+      state.filter.builderClauses = [];
+      state.filter.lastValidated = null;
+      document.getElementById("builder-preview").value = "";
+      document.getElementById("filter-expression").value = "";
+      document.getElementById("builder-value").value = "";
+      document.getElementById("builder-not").value = "false";
+      document.getElementById("builder-connector").value = "AND";
+      renderBuilderClauses();
+      syncBuilderValueMode();
+    }
+
+    function resetFilterState() {
+      state.filter = defaultFilterState();
+      state.grouping = defaultGroupingState();
+      setFilterMode("builder");
+      resetFilterEditor();
+      document.getElementById("group-enabled").checked = false;
+      document.getElementById("group-search-text").value = "";
+      document.getElementById("group-min-distinct").value = "2";
+      updateAppliedFilterUi();
+      setFilterFeedback("Chua co filter duoc ap dung.", "warn");
+      clearGroupingValidation();
+      setInputValidity(document.getElementById("group-search-text"));
+      syncGroupingControlsState(currentSheetColumns());
+    }
+
+    function getCurrentDraftExpression() {
+      if (state.filter.mode === "raw") {
+        return document.getElementById("filter-expression").value.trim();
+      }
+      return document.getElementById("builder-preview").value.trim();
+    }
+
+    async function validateExpressionForSheet(expression, sheet) {
+      return api(`/api/v1/jobs/${state.activeJobId}/filter/validate`, {
+        method: "POST",
+        body: JSON.stringify({
+          expression,
+          sheet: sheet || currentSheetValue() || defaultNonVirtualSheet()
+        })
+      });
+    }
+
+    async function reconcileAppliedContextForCurrentSheet() {
+      const columns = currentSheetColumns();
+      const sheet = currentSheetValue();
+      const warnings = [];
+
+      populateBuilderFields(columns);
+      syncGroupingControlsState(columns);
+
+      if (state.filter.appliedExpression) {
+        try {
+          const out = await validateExpressionForSheet(state.filter.appliedExpression, sheet);
+          if (!out?.valid) {
+            state.filter.appliedExpression = "";
+            warnings.push("Raw filter cũ không còn hợp lệ cho sheet mới và đã được tắt.");
+          } else {
+            state.filter.appliedExpression = out.normalized_expression || state.filter.appliedExpression;
+          }
+        } catch (err) {
+          state.filter.appliedExpression = "";
+          warnings.push(`Không thể giữ raw filter trên sheet mới: ${err.message}`);
+        }
+      }
+
+      const appliedGrouping = getAppliedGroupingConfig();
+      if (appliedGrouping) {
+        const validGrouping =
+          columns.includes(appliedGrouping.groupField) &&
+          columns.includes(appliedGrouping.distinctField) &&
+          appliedGrouping.groupField !== appliedGrouping.distinctField;
+        if (!validGrouping) {
+          state.grouping.applied = null;
+          state.grouping.enabled = false;
+          warnings.push("Sheet mới không còn hỗ trợ group condition cũ. Hãy chọn lại field group và Áp filter.");
+        }
+      }
+
+      updateAppliedFilterUi();
+      syncGroupingControlsState(columns);
+      if (warnings.length) {
+        setFilterFeedback(warnings.join("\n"), "warn");
+      }
+      return warnings;
+    }
+
+    async function loadMeta() {
+      const data = await api("/api/v1/meta/options");
+      const envSel = document.getElementById("env");
+      envSel.innerHTML = data.envs.map(x => `<option value="${escapeAttr(x)}">${escapeHtml(x)}</option>`).join("");
+      function renderOffice() {
+        const env = envSel.value;
+        const offices = data.offices[env] || [];
+        document.getElementById("office").innerHTML = offices
+          .map(x => `<option value="${escapeAttr(x)}">${escapeHtml(x)}</option>`)
+          .join("");
+      }
+      envSel.addEventListener("change", renderOffice);
+      renderOffice();
+    }
+
+    async function startJob(evt) {
+      evt.preventDefault();
+      const payload = {
+        env: document.getElementById("env").value,
+        office_code: document.getElementById("office").value,
+        from_date: document.getElementById("from-date").value.trim(),
+        to_date: document.getElementById("to-date").value.trim(),
+        source_types: selectedSources()
+      };
+      const runMsg = document.getElementById("run-msg");
+      runMsg.textContent = "Dang tao job...";
+      try {
+        const out = await api("/api/v1/jobs", {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        const changedJob = state.activeJobId !== out.job_id;
+        state.activeJobId = out.job_id;
+        state.logOffset = 0;
+        if (changedJob) {
+          state.sheetItems = [];
+          resetFilterState();
+          renderSheetOptions();
+          populateBuilderFields([]);
+        }
+        resetResultsQueryState();
+        resetResultsView("Dang cho ket qua va danh sach sheet...");
+        document.getElementById("active-job-id").textContent = state.activeJobId;
+        document.getElementById("logs").textContent = "";
+        setStatusPill("queued");
+        runMsg.textContent = `Da dua job vao hang cho: ${state.activeJobId}`;
+        activateTab("progress");
+        await pollJob();
+      } catch (err) {
+        runMsg.textContent = `Tao job that bai: ${err.message}`;
+      }
+    }
+
+    async function refreshJobStatus() {
+      if (!state.activeJobId) return null;
+      const job = await api(`/api/v1/jobs/${state.activeJobId}`);
+      setStatusPill(job.status);
+      document.getElementById("m-tasks").textContent = `${job.progress.tasks_done} / ${job.progress.tasks_total}`;
+      document.getElementById("m-units").textContent = `${job.progress.units_done} / ${job.progress.units_total}`;
+      document.getElementById("m-p95").textContent = `${Math.round(job.progress.p95_latency_ms || 0)} ms`;
+      document.getElementById("m-err").textContent = `${Number(job.progress.error_rate || 0).toFixed(2)}%`;
+
+      const logs = await api(`/api/v1/jobs/${state.activeJobId}/logs?offset=${state.logOffset}`);
+      if (Array.isArray(logs.logs) && logs.logs.length) {
+        const box = document.getElementById("logs");
+        box.textContent += (box.textContent ? "\n" : "") + logs.logs.join("\n");
+        box.scrollTop = box.scrollHeight;
+      }
+      state.logOffset = logs.next_offset || state.logOffset;
+
+      if (job.status === "succeeded") {
+        await loadSheets();
+        await loadHistory();
+      } else if (job.status === "failed") {
+        resetResultsView(`Job that bai: ${job.error || "loi khong xac dinh"}`);
+        await loadHistory();
+      }
+      return job;
+    }
+
+    async function pollJob() {
+      if (!state.activeJobId) return;
+      if (state.pollHandle) {
+        clearInterval(state.pollHandle);
+        state.pollHandle = null;
+      }
+      const first = await refreshJobStatus().catch(err => {
+        console.error(err);
+        return null;
+      });
+      if (first && (first.status === "succeeded" || first.status === "failed")) return;
+
+      state.pollHandle = setInterval(async () => {
+        try {
+          const job = await refreshJobStatus();
+          if (job && (job.status === "succeeded" || job.status === "failed")) {
+            clearInterval(state.pollHandle);
+            state.pollHandle = null;
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      }, 1500);
+    }
+
+    async function loadSheets() {
+      const msg = document.getElementById("results-msg");
+      if (!state.activeJobId) {
+        msg.textContent = "Chua co job nao duoc mo.";
+        return;
+      }
+      try {
+        const out = await api(`/api/v1/jobs/${state.activeJobId}/sheets`);
+        const items = Array.isArray(out.items)
+          ? out.items
+          : (out.sheets || []).map(name => ({ name, label: name, total_rows: 0, is_virtual: false, columns: [] }));
+
+        state.sheetItems = items;
+        state.allSheetsName = out.all_sheets_name || state.allSheetsName;
+        renderSheetOptions();
+        await reconcileAppliedContextForCurrentSheet();
+
+        const realCount = state.sheetItems.filter(item => !item.is_virtual).length;
+        msg.textContent = `Da nap ${realCount} sheet case.`;
+        if (state.sheetItems.length) {
+          await reloadCurrentResultsView();
+        } else {
+          resetResultsView("Khong tim thay du lieu sheet.");
+        }
+      } catch (err) {
+        resetResultsView(`Khong the nap sheet: ${err.message}`);
+        msg.textContent = `Khong the nap sheet: ${err.message}`;
+      }
+    }
+
+    async function loadResults() {
+      const msg = document.getElementById("results-msg");
+      if (!state.activeJobId) {
+        msg.textContent = "Chua co job nao duoc mo.";
+        return;
+      }
+      const sheet = currentSheetValue();
+      if (!sheet) {
+        msg.textContent = "Hay chon sheet truoc.";
+        return;
+      }
+      try {
+        const q = new URLSearchParams({
+          sheet,
+          page: String(state.page),
+          page_size: String(state.pageSize),
+          search: "",
+          search_field: document.getElementById("search-field").value || "INV_NO"
+        });
+        const appliedGrouping = getAppliedGroupingConfig();
+        if (state.filter.active && state.filter.appliedExpression) {
+          q.set("filter_expr", state.filter.appliedExpression);
+        }
+        if (appliedGrouping) {
+          q.set("group_enabled", "true");
+          q.set("group_field", appliedGrouping.groupField);
+          q.set("distinct_field", appliedGrouping.distinctField);
+          q.set("min_distinct", String(appliedGrouping.minDistinct));
+        }
+        const out = await api(`/api/v1/jobs/${state.activeJobId}/results?${q.toString()}`);
+        state.page = out.page || 1;
+        renderResultsPayload(out);
+      } catch (err) {
+        resetResultsView(`Tai ket qua that bai: ${err.message}`);
+        msg.textContent = `Tai ket qua that bai: ${err.message}`;
+      }
+    }
+
+    async function loadGroupedResults() {
+      const msg = document.getElementById("results-msg");
+      const appliedGrouping = getAppliedGroupingConfig();
+      if (!appliedGrouping) {
+        resetResultsView("Bật group condition ở tab Filter rồi bấm Áp filter để xem Grouped.");
+        setResultsView("grouped");
+        return;
+      }
+      const searchInput = document.getElementById("group-search-text");
+      const search = searchInput.value.trim();
+      if (search.length > 120) {
+        setInputValidity(searchInput, "Từ khóa tìm nhóm tối đa 120 ký tự.");
+        msg.textContent = "Từ khóa tìm nhóm tối đa 120 ký tự.";
+        return;
+      }
+      setInputValidity(searchInput);
+      state.grouping.search = search;
+      try {
+        const q = new URLSearchParams({
+          sheet: currentSheetValue(),
+          group_field: appliedGrouping.groupField,
+          distinct_field: appliedGrouping.distinctField,
+          page: String(state.page),
+          page_size: String(state.pageSize),
+          min_distinct: String(appliedGrouping.minDistinct),
+          search: search
+        });
+        if (state.filter.active && state.filter.appliedExpression) {
+          q.set("filter_expr", state.filter.appliedExpression);
+        }
+        const out = await api(`/api/v1/jobs/${state.activeJobId}/grouped-results?${q.toString()}`);
+        state.page = out.page || 1;
+        renderGroupedResultsPayload(out);
+      } catch (err) {
+        resetResultsView(`Tai ket qua nhom that bai: ${err.message}`);
+        msg.textContent = `Tai ket qua nhom that bai: ${err.message}`;
+        setResultsView("grouped");
+      }
+    }
+
+    async function reloadCurrentResultsView() {
+      if (state.resultsView === "grouped") {
+        await loadGroupedResults();
+        return;
+      }
+      await loadResults();
+    }
+
+    async function loadHistory() {
+      try {
+        const out = await api("/api/v1/history");
+        const cols = [
+          { key: "env", label: "env" },
+          { key: "office_code", label: "office_code" },
+          { key: "from_date", label: "from_date" },
+          { key: "to_date", label: "to_date" },
+          { key: "status", label: "status" },
+          { key: "single_case", label: "single_case" },
+          { key: "split_case", label: "split_case" },
+          { key: "split_case_manual", label: "split_case_manual" },
+          { key: "group_case", label: "group_case" },
+          { key: "supplement_case", label: "supplement_case" },
+          { key: "created_at", label: "created_at" },
+          { key: "finished_at", label: "finished_at" }
+        ];
+        const table = document.getElementById("history-table");
+        const thead = "<thead><tr>" + cols.map(col => `<th>${escapeHtml(col.label)}</th>`).join("") + "<th>actions</th></tr></thead>";
+        const visibleItems = (out.items || []).filter(item => {
+          const statusValue = String(item?.status ?? "").trim().toLowerCase();
+          return Boolean(item?.has_output) && statusValue !== "false";
+        });
+        if (!visibleItems.length) {
+          table.innerHTML = `${thead}<tbody><tr><td colspan="${cols.length + 1}">Khong co job nao mo lai duoc.</td></tr></tbody>`;
+          return;
+        }
+        const body = visibleItems.map(item => {
+          const cells = cols.map(col => {
+            let value = item?.[col.key] ?? "";
+            if (col.key === "created_at" || col.key === "finished_at") {
+              value = formatVietnamDateTime(value);
+            }
+            return `<td>${escapeHtml(value)}</td>`;
+          }).join("");
+          const actions = `
+            <button onclick="openJob('${escapeAttr(item.job_id)}')">mo</button>
+            ${item.has_output ? `<button onclick="downloadJob('${escapeAttr(item.job_id)}')">tai file</button>` : ""}
+          `;
+          return `<tr>${cells}<td>${actions}</td></tr>`;
+        }).join("");
+        table.innerHTML = `${thead}<tbody>${body}</tbody>`;
+      } catch (err) {
+        document.getElementById("history-table").innerHTML =
+          `<tbody><tr><td>${escapeHtml(`Khong the nap lich su: ${err.message}`)}</td></tr></tbody>`;
+      }
+    }
+
+    async function openJob(jobId) {
+      const changedJob = state.activeJobId !== jobId;
+      state.activeJobId = jobId;
+      state.logOffset = 0;
+      if (changedJob) {
+        state.sheetItems = [];
+        resetFilterState();
+        renderSheetOptions();
+        populateBuilderFields([]);
+      }
+      resetResultsQueryState();
+      resetResultsView("Dang nap lai ket qua cua job...");
+      document.getElementById("active-job-id").textContent = jobId;
+      document.getElementById("logs").textContent = "";
+      await pollJob();
+      activateTab("results");
+    }
+
+    function getCurrentExportContext() {
+      const sheet = currentSheetValue();
+      if (state.filter.active || sheet === state.allSheetsName) {
+        const appliedGrouping = getAppliedGroupingConfig();
+        return {
+          sheet: sheet || state.allSheetsName,
+          filter_expr: state.filter.appliedExpression || "",
+          group_enabled: Boolean(appliedGrouping),
+          group_field: appliedGrouping?.groupField || "",
+          distinct_field: appliedGrouping?.distinctField || "",
+          min_distinct: appliedGrouping?.minDistinct || 2
+        };
+      }
+      return null;
+    }
+
+    async function downloadJob(jobId, context = null) {
+      const msg = document.getElementById("results-msg");
+      msg.textContent = "Dang chuan bi file export...";
+      try {
+        const request = { method: "POST" };
+        if (context && (context.sheet || context.filter_expr || context.group_enabled)) {
+          request.body = JSON.stringify(context);
+        }
+        const created = await api(`/api/v1/jobs/${jobId}/exports`, request);
+        const exportId = created.export_id;
+        let tries = 0;
+        while (tries < 120) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          tries += 1;
+          const st = await api(`/api/v1/jobs/${jobId}/exports/${exportId}`);
+          if (st.status === "succeeded") {
+            window.open(`/api/v1/jobs/${jobId}/exports/${exportId}/download`, "_blank");
+            msg.textContent = "File export da san sang.";
+            return;
+          }
+          if (st.status === "failed") {
+            msg.textContent = `Export that bai: ${st.error || "loi khong xac dinh"}`;
+            return;
+          }
+        }
+        msg.textContent = "Export dang mat nhieu thoi gian hon du kien. Hay thu lai.";
+      } catch (err) {
+        msg.textContent = `Export that bai: ${err.message}`;
+      }
+    }
+
+    async function validateCurrentFilter({ showFeedback = true, expression = getCurrentDraftExpression(), sheet = currentSheetValue() } = {}) {
+      if (!state.activeJobId) {
+        if (showFeedback) setFilterFeedback("Hay mo mot job da hoan tat truoc khi kiem tra filter.", "error");
+        return null;
+      }
+      if (!expression) {
+        const empty = {
+          valid: true,
+          normalized_expression: "",
+          referenced_columns: [],
+          suggestions: [],
+          errors: []
+        };
+        state.filter.lastValidated = empty;
+        if (showFeedback) {
+          setFilterFeedback("Bieu thuc dang rong. Neu ap dung, bo loc toan cuc se duoc xoa.", "warn");
+        }
+        return empty;
+      }
+      try {
+        const out = await validateExpressionForSheet(expression, sheet);
+        state.filter.lastValidated = out;
+        if (!showFeedback) return out;
+        if (out.valid) {
+          const fields = out.referenced_columns?.length ? out.referenced_columns.join(", ") : "khong co";
+          setFilterFeedback(
+            `Bieu thuc hop le.\nNormalized: ${out.normalized_expression || "(rong)"}\nFields: ${fields}`,
+            "ok"
+          );
+        } else {
+          const suggestions = out.suggestions?.length ? `\nGoi y: ${out.suggestions.join(", ")}` : "";
+          setFilterFeedback(
+            `Bieu thuc khong hop le.\nLoi: ${(out.errors || []).join("; ") || "loi validate khong xac dinh"}${suggestions}`,
+            "error"
+          );
+        }
+        return out;
+      } catch (err) {
+        if (showFeedback) setFilterFeedback(`Kiem tra bieu thuc that bai.\n${err.message}`, "error");
+        return null;
+      }
+    }
+
+    async function validateFilterSetup({ showFeedback = true } = {}) {
+      const rawValidation = await validateCurrentFilter({ showFeedback: false });
+      if (!rawValidation) {
+        if (showFeedback) setFilterFeedback("Kiem tra raw filter that bai.", "error");
+        return null;
+      }
+      if (!rawValidation.valid) {
+        if (showFeedback) {
+          const suggestions = rawValidation.suggestions?.length ? `\nGoi y: ${rawValidation.suggestions.join(", ")}` : "";
+          setFilterFeedback(
+            `Bieu thuc khong hop le.\nLoi: ${(rawValidation.errors || []).join("; ") || "loi validate khong xac dinh"}${suggestions}`,
+            "error"
+          );
+        }
+        return null;
+      }
+
+      const groupingValidation = validateGroupingOptions({ showFeedback: false });
+      if (!groupingValidation.valid) {
+        if (showFeedback) {
+          validateGroupingOptions({ showFeedback: true });
+        }
+        return null;
+      }
+
+      const hasRaw = Boolean((rawValidation.normalized_expression || "").trim());
+      const hasGrouping = Boolean(groupingValidation.config);
+      if (showFeedback) {
+        if (!hasRaw && !hasGrouping) {
+          setFilterFeedback("Chua co dieu kien nao duoc cau hinh. Neu ap dung, bo loc hien tai se duoc xoa.", "warn");
+        } else {
+          const messages = [];
+          if (hasRaw) {
+            messages.push(`Raw filter hop le.\nNormalized: ${rawValidation.normalized_expression}`);
+          } else {
+            messages.push("Khong co raw filter.");
+          }
+          if (hasGrouping) {
+            messages.push(`Group condition hop le.\n${describeGroupingConfig(groupingValidation.config)}`);
+          } else {
+            messages.push("Group condition dang tat.");
+          }
+          setFilterFeedback(messages.join("\n"), "ok");
+        }
+      }
+
+      return { rawValidation, groupingValidation, hasRaw, hasGrouping };
+    }
+
+    async function applyFilter() {
+      if (!state.activeJobId) {
+        setFilterFeedback("Hay mo mot job da hoan tat truoc khi ap filter.", "error");
+        return;
+      }
+      const validation = await validateFilterSetup({ showFeedback: true });
+      if (!validation) return;
+      if (!validation.hasRaw && !validation.hasGrouping) {
+        await clearFilter();
+        activateTab("results");
+        return;
+      }
+      state.filter.appliedExpression = validation.rawValidation.normalized_expression || "";
+      state.grouping.applied = validation.groupingValidation.config;
+      document.getElementById("filter-expression").value = state.filter.appliedExpression || document.getElementById("filter-expression").value;
+      updateAppliedFilterUi();
+      syncGroupingControlsState(currentSheetColumns());
+      const messages = [];
+      if (state.filter.appliedExpression) {
+        messages.push(`Da ap raw filter.\nNormalized: ${state.filter.appliedExpression}`);
+      }
+      if (state.grouping.applied) {
+        messages.push(`Da ap group condition.\n${describeGroupingConfig(state.grouping.applied)}`);
+      }
+      setFilterFeedback(messages.join("\n"), "ok");
+      invalidateResultCaches();
+      resetResultsQueryState();
+      await reloadCurrentResultsView();
+      activateTab("results");
+    }
+
+    async function clearFilter({ reloadResults = true } = {}) {
+      resetFilterState();
+      invalidateResultCaches();
+      resetResultsQueryState();
+      if (reloadResults && state.activeJobId && state.sheetItems.length) {
+        await reloadCurrentResultsView();
+      }
+    }
+
+    function addBuilderClause() {
+      if (!state.availableColumns.length) {
+        setFilterFeedback("Hay nap mot job da hoan tat de lay danh sach field.", "error");
+        return;
+      }
+      const field = document.getElementById("builder-field").value;
+      const operator = document.getElementById("builder-operator").value;
+      const value = document.getElementById("builder-value").value.trim();
+      const wrapNot = document.getElementById("builder-not").value === "true";
+      const requiresValue = operator !== "IS NULL" && operator !== "IS NOT NULL";
+      if (!field) {
+        setFilterFeedback("Hay chon field truoc khi them dieu kien.", "error");
+        return;
+      }
+      if (requiresValue && !value) {
+        setFilterFeedback("Operator nay can mot gia tri.", "error");
+        return;
+      }
+      state.filter.builderClauses.push({
+        connector: state.filter.builderClauses.length ? document.getElementById("builder-connector").value : "AND",
+        field,
+        operator,
+        value,
+        not: wrapNot
+      });
+      if (requiresValue) {
+        document.getElementById("builder-value").value = "";
+      }
+      document.getElementById("builder-not").value = "false";
+      rebuildBuilderPreview();
+      setFilterFeedback("Builder da duoc cap nhat. Hay kiem tra hoac ap filter khi san sang.", "warn");
+    }
+
+    document.getElementById("run-form").addEventListener("submit", startJob);
+    document.getElementById("sheet").addEventListener("change", async () => {
+      invalidateResultCaches();
+      clearResultsSearchValidation();
+      clearGroupingValidation();
+      await reconcileAppliedContextForCurrentSheet();
+      resetResultsQueryState();
+      await reloadCurrentResultsView();
+    });
+    document.getElementById("btn-search").addEventListener("click", () => {
+      handleQuickSearch({ requireKeyword: false });
+    });
+    document.getElementById("search-field").addEventListener("change", () => {
+      if (!validateResultsSearchOptions({ requireLoadedResults: true, requireKeyword: false })) {
+        return;
+      }
+      if (state.rowResult) renderResultsPayload(state.rowResult);
+    });
+    document.getElementById("search-text").addEventListener("keydown", evt => {
+      if (evt.key === "Enter") {
+        evt.preventDefault();
+        handleQuickSearch({ requireKeyword: false });
+      }
+    });
+    document.getElementById("search-text").addEventListener("input", () => {
+      setInputValidity(document.getElementById("search-text"));
+    });
+    document.getElementById("btn-refresh-sheets").addEventListener("click", loadSheets);
+    document.getElementById("btn-download").addEventListener("click", () => {
+      if (!state.activeJobId) return;
+      downloadJob(state.activeJobId, getCurrentExportContext());
+    });
+    document.getElementById("btn-prev").addEventListener("click", async () => {
+      if (state.currentResult?.has_prev) {
+        state.page = Math.max(1, state.page - 1);
+        await reloadCurrentResultsView();
+      }
+    });
+    document.getElementById("btn-next").addEventListener("click", async () => {
+      if (state.currentResult?.has_next) {
+        state.page += 1;
+        await reloadCurrentResultsView();
+      }
+    });
+    document.getElementById("results-view-rows").addEventListener("click", async () => {
+      setResultsView("rows");
+      state.page = 1;
+      if (state.rowResult) {
+        renderResultsPayload(state.rowResult);
+      } else if (state.activeJobId && state.sheetItems.length) {
+        await loadResults();
+      } else {
+        resetResultsView("Chua co du lieu de hien thi.");
+        setResultsView("rows");
+      }
+    });
+    document.getElementById("results-view-grouped").addEventListener("click", async () => {
+      setResultsView("grouped");
+      state.page = 1;
+      syncGroupedSearchState();
+      if (state.groupResult) {
+        renderGroupedResultsPayload(state.groupResult);
+      } else if (state.activeJobId && state.sheetItems.length) {
+        await loadGroupedResults();
+      } else {
+        resetResultsView("Chua co du lieu nhom de hien thi.");
+        setResultsView("grouped");
+      }
+    });
+    document.getElementById("group-enabled").addEventListener("change", () => {
+      state.grouping.enabled = document.getElementById("group-enabled").checked;
+      clearGroupingValidation();
+      syncGroupingControlsState(currentSheetColumns());
+    });
+    document.getElementById("group-by-field").addEventListener("change", () => {
+      state.grouping.groupField = document.getElementById("group-by-field").value;
+      syncGroupingControlsState(currentSheetColumns());
+      clearGroupingValidation();
+    });
+    document.getElementById("group-distinct-field").addEventListener("change", () => {
+      state.grouping.distinctField = document.getElementById("group-distinct-field").value;
+      clearGroupingValidation();
+    });
+    document.getElementById("group-min-distinct").addEventListener("input", () => {
+      state.grouping.minDistinct = Number(document.getElementById("group-min-distinct").value || 0);
+      setInputValidity(document.getElementById("group-min-distinct"));
+    });
+    document.getElementById("group-search-text").addEventListener("input", () => {
+      state.grouping.search = document.getElementById("group-search-text").value.trim();
+      invalidateGroupedResultCache();
+      setInputValidity(document.getElementById("group-search-text"));
+      syncGroupedSearchState();
+    });
+    document.getElementById("group-search-text").addEventListener("keydown", evt => {
+      if (evt.key === "Enter") {
+        evt.preventDefault();
+        state.page = 1;
+        loadGroupedResults();
+      }
+    });
+    document.getElementById("btn-group-run").addEventListener("click", () => {
+      state.page = 1;
+      loadGroupedResults();
+    });
+    document.getElementById("btn-group-reset").addEventListener("click", async () => {
+      invalidateGroupedResultCache();
+      document.getElementById("group-search-text").value = "";
+      state.grouping.search = "";
+      setInputValidity(document.getElementById("group-search-text"));
+      syncGroupedSearchState();
+      if (state.resultsView === "grouped" && state.activeJobId && state.sheetItems.length) {
+        state.page = 1;
+        await loadGroupedResults();
+      }
+    });
+    document.getElementById("btn-history").addEventListener("click", loadHistory);
+
+    document.getElementById("filter-mode-builder").addEventListener("click", () => setFilterMode("builder"));
+    document.getElementById("filter-mode-raw").addEventListener("click", () => setFilterMode("raw"));
+    document.getElementById("builder-operator").addEventListener("change", syncBuilderValueMode);
+    document.getElementById("btn-builder-add").addEventListener("click", addBuilderClause);
+    document.getElementById("btn-builder-remove-last").addEventListener("click", () => {
+      if (state.filter.builderClauses.length) {
+        state.filter.builderClauses.pop();
+        rebuildBuilderPreview();
+        setFilterFeedback("Da bo dieu kien cuoi cung.", "warn");
+      }
+    });
+    document.getElementById("btn-builder-clear").addEventListener("click", () => {
+      state.filter.builderClauses = [];
+      rebuildBuilderPreview();
+      setFilterFeedback("Da xoa toan bo builder.", "warn");
+    });
+    document.getElementById("builder-clauses").addEventListener("click", evt => {
+      const btn = evt.target.closest("[data-remove-index]");
+      if (!btn) return;
+      const index = Number(btn.dataset.removeIndex);
+      if (Number.isInteger(index) && index >= 0 && index < state.filter.builderClauses.length) {
+        state.filter.builderClauses.splice(index, 1);
+        rebuildBuilderPreview();
+        setFilterFeedback("Da xoa dieu kien da chon.", "warn");
+      }
+    });
+    document.getElementById("btn-builder-copy").addEventListener("click", () => {
+      const preview = document.getElementById("builder-preview").value.trim();
+      if (!preview) {
+        setFilterFeedback("Builder preview dang rong.", "warn");
+        return;
+      }
+      document.getElementById("filter-expression").value = preview;
+      setFilterMode("raw");
+      setFilterFeedback("Da dua builder preview sang Raw mode.", "warn");
+    });
+    document.getElementById("btn-raw-use-preview").addEventListener("click", () => {
+      const preview = document.getElementById("builder-preview").value.trim();
+      if (!preview) {
+        setFilterFeedback("Builder preview dang rong.", "warn");
+        return;
+      }
+      document.getElementById("filter-expression").value = preview;
+      setFilterFeedback("Da dua builder preview vao o Raw editor.", "warn");
+    });
+    document.getElementById("btn-filter-validate").addEventListener("click", () => {
+      validateFilterSetup({ showFeedback: true });
+    });
+    document.getElementById("btn-filter-apply").addEventListener("click", () => {
+      applyFilter();
+    });
+    document.getElementById("btn-filter-clear").addEventListener("click", () => {
+      clearFilter();
+    });
+
+    syncBuilderValueMode();
+    resetFilterState();
+    resetResultsView();
+    loadMeta();
+    loadHistory();
+
+    window.openJob = openJob;
+    window.downloadJob = downloadJob;
+  </script>
 </body>
 </html>
+
