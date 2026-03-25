@@ -852,12 +852,12 @@
             <select id="office"></select>
           </div>
           <div class="field">
-            <label>Từ ngày (YYYYMMDD)</label>
-            <input id="from-date" value="20240901" />
+            <label>Từ ngày</label>
+            <input id="from-date" type="date" value="2024-09-01" />
           </div>
           <div class="field">
-            <label>Đến ngày (YYYYMMDD)</label>
-            <input id="to-date" value="20260201" />
+            <label>Đến ngày (hôm nay)</label>
+            <input id="to-date" type="date" />
           </div>
           <div class="field">
             <button class="primary" type="submit">Bắt đầu xử lý</button>
@@ -1057,13 +1057,13 @@
             <span class="muted">Sheet hiện tại: <span class="code-inline" id="grouping-sheet-context">(none)</span></span>
           </div>
           <div class="toolbar">
-            <select id="group-by-field" disabled>
+            <select id="group-by-field">
               <option value="">Group by field</option>
             </select>
-            <select id="group-distinct-field" disabled>
+            <select id="group-distinct-field">
               <option value="">Distinct field</option>
             </select>
-            <input id="group-min-distinct" type="number" min="2" value="2" disabled />
+            <input id="group-min-distinct" type="number" min="2" value="2" />
           </div>
           <div class="toolbar muted">
             <span>Group condition đang áp dụng:</span>
@@ -1571,6 +1571,41 @@
       }).format(parsed).replace(",", "");
     }
 
+    function formatDateForInput(value) {
+      const text = String(value ?? "").trim();
+      if (!text) return "";
+      if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+      if (/^\d{8}$/.test(text)) {
+        return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`;
+      }
+      const parsed = new Date(text);
+      if (Number.isNaN(parsed.getTime())) return "";
+      const local = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000);
+      return local.toISOString().slice(0, 10);
+    }
+
+    function formatDateForPayload(value) {
+      return String(value ?? "").trim().replace(/-/g, "");
+    }
+
+    function getTodayDateInputValue() {
+      const now = new Date();
+      const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+      return local.toISOString().slice(0, 10);
+    }
+
+    function syncRunDateInputs() {
+      const fromInput = document.getElementById("from-date");
+      const toInput = document.getElementById("to-date");
+      const today = getTodayDateInputValue();
+      const currentFrom = formatDateForInput(fromInput.value) || formatDateForInput(fromInput.defaultValue) || today;
+      fromInput.value = currentFrom > today ? today : currentFrom;
+      fromInput.max = today;
+      toInput.value = today;
+      toInput.min = fromInput.value || "";
+      toInput.max = today;
+    }
+
     function setInputValidity(el, message = "") {
       if (!el) return;
       el.setCustomValidity(message);
@@ -1758,16 +1793,20 @@
       const distinctSel = document.getElementById("group-distinct-field");
       const minInput = document.getElementById("group-min-distinct");
       const list = Array.isArray(columns) ? columns.filter(Boolean) : [];
-      const canConfigure = Boolean(state.activeJobId) && Boolean(currentSheetValue()) && list.length > 1;
+      const minDistinct = String(Math.max(2, Number(state.grouping.minDistinct || 2)));
+
+      toggle.checked = Boolean(state.grouping.enabled);
+      toggle.disabled = false;
+      groupSel.disabled = false;
+      distinctSel.disabled = false;
+      minInput.disabled = false;
+      minInput.value = minDistinct;
 
       if (!list.length) {
         groupSel.innerHTML = `<option value="">Chưa có field nhóm</option>`;
         distinctSel.innerHTML = `<option value="">Chưa có field distinct</option>`;
-        toggle.checked = Boolean(state.grouping.enabled);
-        toggle.disabled = true;
-        groupSel.disabled = true;
-        distinctSel.disabled = true;
-        minInput.disabled = true;
+        state.grouping.groupField = "";
+        state.grouping.distinctField = "";
         updateGroupingSheetContext();
         syncGroupedSearchState();
         return;
@@ -1787,14 +1826,6 @@
       if (nextDistinctField && distinctCandidates.includes(nextDistinctField)) {
         distinctSel.value = nextDistinctField;
       }
-
-      minInput.value = String(Math.max(2, Number(state.grouping.minDistinct || 2)));
-      toggle.checked = Boolean(state.grouping.enabled);
-      toggle.disabled = !canConfigure;
-      const enabled = canConfigure && Boolean(state.grouping.enabled);
-      groupSel.disabled = !enabled;
-      distinctSel.disabled = !enabled || distinctCandidates.length === 0;
-      minInput.disabled = !enabled;
       updateGroupingSheetContext();
       syncGroupedSearchState();
     }
@@ -2289,14 +2320,29 @@
 
     async function startJob(evt) {
       evt.preventDefault();
+      const runMsg = document.getElementById("run-msg");
+      const fromInput = document.getElementById("from-date");
+      const toInput = document.getElementById("to-date");
+      syncRunDateInputs();
+      setInputValidity(fromInput);
+      setInputValidity(toInput);
+      if (!fromInput.value) {
+        setInputValidity(fromInput, "Hãy chọn Từ ngày.");
+        runMsg.textContent = "Hãy chọn Từ ngày trước khi chạy job.";
+        return;
+      }
+      if (fromInput.value > toInput.value) {
+        setInputValidity(fromInput, "Từ ngày không được lớn hơn ngày hiện tại.");
+        runMsg.textContent = "Từ ngày không được lớn hơn ngày hiện tại.";
+        return;
+      }
       const payload = {
         env: document.getElementById("env").value,
         office_code: document.getElementById("office").value,
-        from_date: document.getElementById("from-date").value.trim(),
-        to_date: document.getElementById("to-date").value.trim(),
+        from_date: formatDateForPayload(fromInput.value),
+        to_date: formatDateForPayload(toInput.value),
         source_types: selectedSources()
       };
-      const runMsg = document.getElementById("run-msg");
       runMsg.textContent = "Dang tao job...";
       try {
         const out = await api("/api/v1/jobs", {
@@ -2942,8 +2988,22 @@
     document.getElementById("btn-filter-clear").addEventListener("click", () => {
       clearFilter();
     });
+    document.getElementById("from-date").addEventListener("change", () => {
+      setInputValidity(document.getElementById("from-date"));
+      syncRunDateInputs();
+    });
+    document.getElementById("to-date").addEventListener("change", syncRunDateInputs);
+    document.getElementById("to-date").addEventListener("input", syncRunDateInputs);
+    document.getElementById("to-date").addEventListener("keydown", evt => {
+      evt.preventDefault();
+    });
+    window.addEventListener("focus", syncRunDateInputs);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) syncRunDateInputs();
+    });
 
     syncBuilderValueMode();
+    syncRunDateInputs();
     resetFilterState();
     resetResultsView();
     loadMeta();

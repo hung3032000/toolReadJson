@@ -13,24 +13,49 @@ Open:
 http://127.0.0.1:8000
 ```
 
-## Public via nginx on Windows
+## LAN via nginx on Windows
 
-If you already have `nginx` on Windows, this repo now includes:
+One-line start from the repo root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deploy\start_public.ps1
+```
+
+What it does:
+
+- starts or reuses the backend on `127.0.0.1:8000`
+- runs `nginx -t`, then starts or reloads `nginx`
+- checks `http://127.0.0.1:8000/healthz` and `http://127.0.0.1/healthz`
+- prints local and LAN URLs for quick sharing
+- does not change Windows Firewall, router settings, or any network policy
+
+Optional flags:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deploy\start_public.ps1 -Restart
+powershell -ExecutionPolicy Bypass -File .\deploy\start_public.ps1 -NginxRoot C:\path\to\nginx
+```
+
+This repo also includes:
 
 - `deploy/start_web_prod.ps1`: start FastAPI backend on `127.0.0.1:8000`
 - `deploy/stop_web_prod.ps1`: stop the backend using saved PID
+- `deploy/start_public.ps1`: wrapper to start backend + nginx for LAN testing
 - `deploy/nginx/toolreadjson.windows.conf`: reverse-proxy server block for `nginx`
 
 Typical flow:
 
 ```powershell
 cd C:\Users\hung.pn\Desktop\Code\toolReadJson
-.\deploy\start_web_prod.ps1
+powershell -ExecutionPolicy Bypass -File .\deploy\start_public.ps1
 ```
 
-Then point `nginx` port `80` to `http://127.0.0.1:8000` with the included config and reload:
+If you prefer the old manual flow, keep `nginx` port `80` pointed to `http://127.0.0.1:8000` and run:
 
 ```powershell
+cd C:\Users\hung.pn\Desktop\Code\toolReadJson
+.\deploy\start_web_prod.ps1
+
 cd C:\Users\hung.pn\Downloads\nginx-1.29.4\nginx-1.29.4
 .\nginx.exe -t
 .\nginx.exe -s reload
@@ -41,11 +66,21 @@ Quick checks:
 - `http://127.0.0.1/`
 - `http://127.0.0.1/healthz`
 
-To expose it outside your machine, you still need:
+Stop only the backend:
 
-- Windows Firewall allow inbound TCP `80`
-- Router/NAT port-forward if clients are outside your LAN
-- Optional domain -> public IP mapping
+```powershell
+cd C:\Users\hung.pn\Desktop\Code\toolReadJson
+.\deploy\stop_web_prod.ps1
+```
+
+To expose it outside your machine, you still need:
+This LAN-only setup does not try to expose the app to the Internet.
+
+Notes:
+
+- `start_public.ps1` does not open Windows Firewall, create rules, or change any network policy.
+- The user running `start_public.ps1` still needs write access to the `nginx` root, especially its `logs` folder and `nginx.pid`.
+- Users should be on the same local network to access the printed `LAN URL`.
 
 ## API quick check
 
