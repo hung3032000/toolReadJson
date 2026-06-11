@@ -11,3 +11,6 @@ UI (mainUI)
          ├── processCaseInBrim → phân loại 6 case
          ├── saveNewExcel → ghi nhiều sheet
          └── Cập nhật số lượng case ra UI
+
+
+python -m uvicorn app_web:app --host 127.0.0.1 --port 8056 --reload

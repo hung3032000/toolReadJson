@@ -1316,6 +1316,119 @@ class JobManager:
             "rows": page_rows,
         }
 
+    def _normalize_lookup_values(self, values: List[Any]) -> Tuple[List[str], List[str]]:
+        normalized: List[str] = []
+        distinct: List[str] = []
+        seen = set()
+        for item in values or []:
+            text = str("" if item is None else item).strip()
+            if not text:
+                continue
+            normalized.append(text)
+            if text in seen:
+                continue
+            seen.add(text)
+            distinct.append(text)
+        return normalized, distinct
+
+    def _format_lookup_literal(self, value: str) -> str:
+        text = str(value or "").strip()
+        if re.fullmatch(r"-?\d+(?:\.\d+)?", text):
+            return text
+        if re.fullmatch(r"[A-Za-z0-9_%./:-]+", text):
+            return text
+        return "'" + text.replace("'", "''") + "'"
+
+    def lookup_rows(
+        self,
+        job_id: str,
+        sheet: str,
+        field: str,
+        values: List[Any],
+        filter_expr: str = "",
+        group_enabled: bool = False,
+        group_field: str = "",
+        distinct_field: str = "",
+        min_distinct: int = 2,
+    ) -> Dict[str, Any]:
+        df, validation, schema, unfiltered_total, grouping, _ = self.materialize_query_frame(
+            job_id,
+            sheet,
+            filter_expr=filter_expr,
+            group_enabled=group_enabled,
+            group_field=group_field,
+            distinct_field=distinct_field,
+            min_distinct=min_distinct,
+        )
+        columns = list(schema.get("columns", []))
+        field = str(field or "").strip()
+        if not field or field not in columns:
+            raise HTTPException(status_code=400, detail=f"field not found: {field or '(empty)'}")
+
+        raw_values, distinct_values = self._normalize_lookup_values(values)
+        if not distinct_values:
+            raise HTTPException(status_code=400, detail="values must contain at least one non-empty item")
+
+        lookup_expr = f"{field} IN ({', '.join(self._format_lookup_literal(value) for value in distinct_values)})"
+        lookup_validation = validate_expression(lookup_expr, columns)
+        if not lookup_validation["valid"]:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "lookup expression is invalid",
+                    "errors": lookup_validation.get("errors", []),
+                    "suggestions": lookup_validation.get("suggestions", []),
+                },
+            )
+
+        mask = apply_to_dataframe(df, lookup_validation["ast"], schema.get("column_info", {}))
+        matched_df = df.loc[mask].copy()
+
+        def to_lookup_text(value: Any) -> str:
+            try:
+                if pd.isna(value):
+                    return ""
+            except Exception:
+                pass
+            return str(value).strip()
+
+        order_map = {value: index for index, value in enumerate(distinct_values)}
+        if not matched_df.empty:
+            matched_df["__lookup_order"] = matched_df[field].map(lambda value: order_map.get(to_lookup_text(value), len(order_map)))
+            matched_df["__lookup_row_order"] = range(len(matched_df.index))
+            matched_df = matched_df.sort_values(by=["__lookup_order", "__lookup_row_order"], kind="stable")
+            matched_df = matched_df.drop(columns=["__lookup_order", "__lookup_row_order"])
+
+        matched_value_set = {to_lookup_text(value) for value in matched_df[field].tolist()}
+        matched_value_set.discard("")
+        matched_values = [value for value in distinct_values if value in matched_value_set]
+        missing_values = [value for value in distinct_values if value not in matched_value_set]
+        matched_df = matched_df.reindex(columns=columns).where(pd.notnull(matched_df), None)
+        normalized_filter_expr = validation.get("normalized_expression", "")
+
+        return {
+            "sheet": sheet,
+            "field": field,
+            "columns": columns,
+            "rows": matched_df.to_dict(orient="records"),
+            "lookup_input_total": len(raw_values),
+            "lookup_distinct_total": len(distinct_values),
+            "matched_rows_total": int(len(matched_df.index)),
+            "matched_values_total": len(matched_values),
+            "missing_values_total": len(missing_values),
+            "matched_values": matched_values,
+            "missing_values": missing_values,
+            "lookup_expression": lookup_validation.get("normalized_expression", lookup_expr),
+            "filter_expr": filter_expr,
+            "normalized_filter_expression": normalized_filter_expr,
+            "group_enabled": bool(grouping),
+            "group_field": grouping["group_field"] if grouping else "",
+            "distinct_field": grouping["distinct_field"] if grouping else "",
+            "min_distinct": grouping["min_distinct"] if grouping else None,
+            "source_rows_total": int(unfiltered_total),
+            "source_rows_filtered": int(len(df.index)),
+        }
+
 
 manager = JobManager()
 
@@ -1331,6 +1444,17 @@ class RunJobRequest(BaseModel):
 class ValidateFilterRequest(BaseModel):
     expression: str = ""
     sheet: str = ALL_SHEETS_NAME
+
+
+class LookupRowsRequest(BaseModel):
+    sheet: str = ALL_SHEETS_NAME
+    field: str
+    values: List[str] = Field(default_factory=list)
+    filter_expr: str = ""
+    group_enabled: bool = False
+    group_field: str = ""
+    distinct_field: str = ""
+    min_distinct: int = 2
 
 
 class CreateExportRequest(BaseModel):
@@ -1458,6 +1582,21 @@ def get_job_sheets(job_id: str):
 @app.post("/api/v1/jobs/{job_id}/filter/validate")
 def validate_filter(job_id: str, req: ValidateFilterRequest):
     return manager.validate_filter(job_id, req.expression, sheet=req.sheet or ALL_SHEETS_NAME)
+
+
+@app.post("/api/v1/jobs/{job_id}/utility/lookup-rows")
+def lookup_job_rows(job_id: str, req: LookupRowsRequest):
+    return manager.lookup_rows(
+        job_id,
+        sheet=req.sheet or ALL_SHEETS_NAME,
+        field=req.field,
+        values=req.values,
+        filter_expr=req.filter_expr,
+        group_enabled=req.group_enabled,
+        group_field=req.group_field,
+        distinct_field=req.distinct_field,
+        min_distinct=req.min_distinct,
+    )
 
 
 @app.get("/api/v1/jobs/{job_id}/results")

@@ -167,3 +167,5 @@ output.rar
 *.txt
 /tmp
 *.csv
+
+artifacts/*

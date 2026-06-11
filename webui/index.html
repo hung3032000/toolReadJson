@@ -451,7 +451,7 @@
       gap: 12px;
       margin-top: 0;
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
     }
     .tab-btn {
       display: flex;
@@ -760,13 +760,29 @@
       font-size: 13px;
       line-height: 1.6;
     }
+    .utility-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.95fr);
+      gap: 16px;
+    }
+    .utility-tools {
+      display: grid;
+      gap: 16px;
+    }
+    .utility-stats {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
     @media (max-width: 1240px) {
       .hero-top,
-      .filter-layout {
+      .filter-layout,
+      .utility-layout {
         grid-template-columns: 1fr;
       }
       .tabs {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
     }
     @media (max-width: 980px) {
@@ -828,6 +844,13 @@
           <span class="tab-copy">
             <strong>Lịch Sử</strong>
             <small>Mở lại job cũ hoặc tải lại output.</small>
+          </span>
+        </button>
+        <button class="tab-btn" data-tab="utility" type="button">
+          <span class="tab-step">06</span>
+          <span class="tab-copy">
+            <strong>Đa Dụng</strong>
+            <small>Công cụ xử lý nhanh các list nghiệp vụ.</small>
           </span>
         </button>
       </div>
@@ -1092,6 +1115,101 @@
       </div>
       <div class="table-wrap">
         <table id="history-table"></table>
+      </div>
+    </section>
+
+    <section class="panel" id="tab-utility">
+      <div class="section-header">
+        <div>
+          <h2>Tiện ích thao tác nhanh</h2>
+          <p>Tab này gom các tool thao tác nhanh. Một số tool chạy ngay trên trình duyệt, một số tool dùng job và sheet đang mở để tra cứu nhanh.</p>
+        </div>
+        <span class="section-tag">Step 6</span>
+      </div>
+      <div class="utility-layout">
+        <div class="utility-tools">
+          <div class="filter-card">
+            <h3>Distinct</h3>
+            <p>Dán list nhiều dòng hoặc chuỗi có dấu phẩy. Mặc định giữ thứ tự từ dòng cuối lên đầu để khớp ví dụ anh/chị đưa ra.</p>
+            <div class="toolbar">
+              <select id="utility-distinct-order">
+                <option value="bottom">Giữ dòng cuối lên đầu</option>
+                <option value="top">Giữ dòng đầu xuống cuối</option>
+              </select>
+              <button class="primary" id="btn-utility-distinct-run" type="button">Distinct</button>
+              <button id="btn-utility-distinct-copy" type="button">Sao chép kết quả</button>
+              <button id="btn-utility-distinct-clear" type="button">Xóa</button>
+            </div>
+            <label class="muted" for="utility-distinct-input">Input</label>
+            <textarea id="utility-distinct-input" class="expr-box" placeholder="Ví dụ:&#10;HKGM250007494&#10;HKGM250007502&#10;HKGM250003539&#10;HKGM250003539"></textarea>
+            <div class="utility-stats">
+              <span class="summary-chip" id="utility-distinct-total">Input items: 0</span>
+              <span class="summary-chip" id="utility-distinct-unique">Distinct items: 0</span>
+            </div>
+          </div>
+          <div class="filter-card">
+            <h3>Tra dòng theo list value</h3>
+            <p>Dán list value, chọn field tương ứng rồi bấm tìm. Tool này sẽ tra trên job đang mở và sheet đang chọn ở tab Kết quả.</p>
+            <div class="toolbar">
+              <select id="utility-lookup-field">
+                <option value="">Chọn field để tra</option>
+              </select>
+              <button class="primary" id="btn-utility-lookup-run" type="button">Tìm dòng</button>
+              <button id="btn-utility-lookup-clear" type="button">Xóa</button>
+            </div>
+            <div class="toolbar muted">
+              <span>Context:</span>
+              <span class="code-inline" id="utility-lookup-context">Chưa có job đang mở.</span>
+            </div>
+            <label class="muted" for="utility-lookup-input">Values</label>
+            <textarea id="utility-lookup-input" class="expr-box" placeholder="Ví dụ:&#10;HKGM250007494&#10;HKGM250007502&#10;HKGM250003539"></textarea>
+            <div class="utility-stats">
+              <span class="summary-chip" id="utility-lookup-input-total">Input items: 0</span>
+              <span class="summary-chip" id="utility-lookup-input-unique">Distinct values: 0</span>
+            </div>
+            <ul class="helper-list">
+              <li>Dùng đúng sheet đang chọn ở tab Kết quả.</li>
+              <li>Nếu đang áp raw filter hoặc group condition thì tool sẽ tra trên đúng tập dữ liệu đó.</li>
+              <li>Chấp nhận cả xuống dòng, dấu phẩy và dấu chấm phẩy.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="utility-tools">
+          <div class="filter-card">
+            <h3>Kết quả Distinct</h3>
+            <p>Output trả về một dòng duy nhất theo format <span class="code-inline">'value1','value2'</span> để dán thẳng sang câu query hoặc mail.</p>
+            <div id="utility-feedback" class="status-box status-warn">Dán dữ liệu vào ô bên trái rồi bấm Distinct.</div>
+            <label class="muted" for="utility-distinct-output" style="display:block; margin-top:12px;">Output</label>
+            <textarea id="utility-distinct-output" class="expr-box" readonly></textarea>
+            <ul class="helper-list" style="margin-top:12px;">
+              <li>Loại bỏ dòng trống và giá trị trùng.</li>
+              <li>Chấp nhận cả xuống dòng, dấu phẩy và dấu chấm phẩy.</li>
+              <li>Kết quả mẫu sẽ bắt đầu bằng <span class="code-inline">'HKGM240010069','HKGM240010037','HKGM250010124'</span> nếu dùng chế độ từ dưới lên.</li>
+            </ul>
+          </div>
+          <div class="filter-card">
+            <h3>Kết quả tra dòng</h3>
+            <p>Bảng bên dưới sẽ trả về tất cả các dòng khớp với list value theo đúng field đã chọn.</p>
+            <div id="utility-lookup-feedback" class="status-box status-warn">Mở một job, chọn sheet ở tab Kết quả, rồi dán list value để tra.</div>
+            <div class="utility-stats">
+              <span class="summary-chip" id="utility-lookup-matched-rows">Matched rows: 0</span>
+              <span class="summary-chip" id="utility-lookup-matched-values">Matched values: 0</span>
+              <span class="summary-chip" id="utility-lookup-missing-count">Missing values: 0</span>
+            </div>
+            <label class="muted" for="utility-lookup-missing" style="display:block; margin-top:12px;">Missing values</label>
+            <textarea id="utility-lookup-missing" class="expr-box" readonly placeholder="Các value không tìm thấy sẽ hiện ở đây."></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="filter-card" style="margin-top:16px;">
+        <h3>Bảng dòng khớp</h3>
+        <p>Kết quả được sắp theo đúng thứ tự value anh/chị dán vào, để đối chiếu nhanh hơn giữa input và row match.</p>
+        <div class="toolbar">
+          <button id="btn-utility-lookup-download" type="button" disabled>Tải sheet hiện tại</button>
+        </div>
+        <div class="table-wrap">
+          <table id="utility-lookup-table"></table>
+        </div>
       </div>
     </section>
   </div>
@@ -1441,7 +1559,8 @@
       progress: document.getElementById("tab-progress"),
       filter: document.getElementById("tab-filter"),
       results: document.getElementById("tab-results"),
-      history: document.getElementById("tab-history")
+      history: document.getElementById("tab-history"),
+      utility: document.getElementById("tab-utility")
     };
 
     function defaultFilterState() {
@@ -1479,7 +1598,11 @@
       groupResult: null,
       availableColumns: [],
       filter: defaultFilterState(),
-      grouping: defaultGroupingState()
+      grouping: defaultGroupingState(),
+      utilityLookup: {
+        lastQuery: null,
+        lastResult: null
+      }
     };
 
     function escapeHtml(value) {
@@ -1599,9 +1722,11 @@
       const toInput = document.getElementById("to-date");
       const today = getTodayDateInputValue();
       const currentFrom = formatDateForInput(fromInput.value) || formatDateForInput(fromInput.defaultValue) || today;
+      const currentTo = formatDateForInput(toInput.value) || formatDateForInput(toInput.defaultValue) || today;
+
       fromInput.value = currentFrom > today ? today : currentFrom;
       fromInput.max = today;
-      toInput.value = today;
+      toInput.value = currentTo > today ? today : (currentTo || today);
       toInput.min = fromInput.value || "";
       toInput.max = today;
     }
@@ -1649,6 +1774,320 @@
       el.textContent = message;
     }
 
+    function setUtilityFeedback(message, tone = "warn") {
+      const el = document.getElementById("utility-feedback");
+      el.className = `status-box ${tone === "ok" ? "status-ok" : tone === "error" ? "status-error" : "status-warn"}`;
+      el.textContent = message;
+    }
+
+    function setUtilityLookupFeedback(message, tone = "warn") {
+      const el = document.getElementById("utility-lookup-feedback");
+      el.className = `status-box ${tone === "ok" ? "status-ok" : tone === "error" ? "status-error" : "status-warn"}`;
+      el.textContent = message;
+    }
+
+    function tokenizeUtilityListInput(text) {
+      return String(text || "")
+        .split(/[\r\n,;]+/)
+        .map(item => item.trim())
+        .filter(Boolean);
+    }
+
+    function computeDistinctValues(values, orderMode) {
+      const seen = new Set();
+      const output = [];
+      const mode = orderMode === "top" ? "top" : "bottom";
+      const start = mode === "top" ? 0 : values.length - 1;
+      const end = mode === "top" ? values.length : -1;
+      const step = mode === "top" ? 1 : -1;
+
+      for (let index = start; index !== end; index += step) {
+        const value = values[index];
+        if (seen.has(value)) continue;
+        seen.add(value);
+        output.push(value);
+      }
+      return output;
+    }
+
+    function formatUtilityDistinctOutput(values) {
+      return values
+        .map(value => `'${String(value).replace(/'/g, "''")}'`)
+        .join(",");
+    }
+
+    async function runUtilityDistinct({ copyAfter = false } = {}) {
+      const inputEl = document.getElementById("utility-distinct-input");
+      const outputEl = document.getElementById("utility-distinct-output");
+      const orderEl = document.getElementById("utility-distinct-order");
+      const values = tokenizeUtilityListInput(inputEl.value);
+      const distinctValues = computeDistinctValues(values, orderEl.value);
+      const output = formatUtilityDistinctOutput(distinctValues);
+
+      document.getElementById("utility-distinct-total").textContent = `Input items: ${formatNumber(values.length)}`;
+      document.getElementById("utility-distinct-unique").textContent = `Distinct items: ${formatNumber(distinctValues.length)}`;
+      outputEl.value = output;
+      setInputValidity(inputEl);
+
+      if (!values.length) {
+        setInputValidity(inputEl, "Hãy dán dữ liệu trước khi chạy Distinct.");
+        setUtilityFeedback("Chưa có dữ liệu đầu vào. Hãy dán list cần distinct vào ô Input.", "error");
+        return;
+      }
+
+      if (copyAfter) {
+        try {
+          await navigator.clipboard.writeText(output);
+          setUtilityFeedback(`Đã distinct ${formatNumber(values.length)} item, còn ${formatNumber(distinctValues.length)} item duy nhất và đã sao chép kết quả.`, "ok");
+          return;
+        } catch (err) {
+          setUtilityFeedback(`Đã distinct ${formatNumber(values.length)} item, còn ${formatNumber(distinctValues.length)} item duy nhất. Trình duyệt chưa cho sao chép tự động: ${err.message}`, "warn");
+          return;
+        }
+      }
+
+      setUtilityFeedback(`Đã distinct ${formatNumber(values.length)} item, còn ${formatNumber(distinctValues.length)} item duy nhất.`, "ok");
+    }
+
+    function clearUtilityDistinct() {
+      document.getElementById("utility-distinct-input").value = "";
+      document.getElementById("utility-distinct-output").value = "";
+      document.getElementById("utility-distinct-order").value = "bottom";
+      document.getElementById("utility-distinct-total").textContent = "Input items: 0";
+      document.getElementById("utility-distinct-unique").textContent = "Distinct items: 0";
+      setInputValidity(document.getElementById("utility-distinct-input"));
+      setUtilityFeedback("Dán dữ liệu vào ô bên trái rồi bấm Distinct.", "warn");
+    }
+
+    function describeUtilityLookupContext() {
+      if (!state.activeJobId) {
+        return "Chưa có job đang mở. Hãy mở 1 job ở tab Lịch Sử hoặc chạy job mới trước.";
+      }
+      const parts = [`Job ${state.activeJobId}`, `Sheet ${currentSheetLabel()}`];
+      if (state.filter.appliedExpression) {
+        parts.push(`Filter ${state.filter.appliedExpression}`);
+      }
+      const appliedGrouping = getAppliedGroupingConfig();
+      if (appliedGrouping) {
+        parts.push(`Group ${describeGroupingConfig(appliedGrouping)}`);
+      }
+      return parts.join(" | ");
+    }
+
+    function syncUtilityLookupContext() {
+      document.getElementById("utility-lookup-context").textContent = describeUtilityLookupContext();
+    }
+
+    function syncUtilityLookupFieldOptions(columns = currentSheetColumns()) {
+      const fieldSel = document.getElementById("utility-lookup-field");
+      const current = fieldSel.value;
+      const list = Array.isArray(columns) ? columns.filter(Boolean) : [];
+      if (!list.length) {
+        fieldSel.innerHTML = `<option value="">Chưa có field để tra</option>`;
+        fieldSel.value = "";
+        syncUtilityLookupContext();
+        return;
+      }
+      fieldSel.innerHTML = list.map(col => `<option value="${escapeAttr(col)}">${escapeHtml(col)}</option>`).join("");
+      fieldSel.value = list.includes(current) ? current : list[0];
+      setInputValidity(fieldSel);
+      syncUtilityLookupContext();
+    }
+
+    function syncUtilityLookupDownloadState() {
+      const btn = document.getElementById("btn-utility-lookup-download");
+      btn.disabled = !state.activeJobId || !state.utilityLookup.lastQuery;
+    }
+
+    function buildUtilityLookupExpression(field, values) {
+      const safeField = String(field || "").trim();
+      const list = Array.isArray(values) ? values.map(item => String(item ?? "").trim()).filter(Boolean) : [];
+      if (!safeField || !list.length) return "";
+      return `${safeField} IN (${list.map(formatBuilderLiteral).join(", ")})`;
+    }
+
+    function combineFilterExpressions(baseExpression, extraExpression) {
+      const base = String(baseExpression || "").trim();
+      const extra = String(extraExpression || "").trim();
+      if (base && extra) return `(${base}) AND (${extra})`;
+      return base || extra || "";
+    }
+
+    function resetUtilityLookupView(message = "Mở một job, chọn sheet ở tab Kết quả, rồi dán list value để tra.") {
+      state.utilityLookup.lastQuery = null;
+      state.utilityLookup.lastResult = null;
+      document.getElementById("utility-lookup-table").innerHTML = "";
+      document.getElementById("utility-lookup-input-total").textContent = "Input items: 0";
+      document.getElementById("utility-lookup-input-unique").textContent = "Distinct values: 0";
+      document.getElementById("utility-lookup-matched-rows").textContent = "Matched rows: 0";
+      document.getElementById("utility-lookup-matched-values").textContent = "Matched values: 0";
+      document.getElementById("utility-lookup-missing-count").textContent = "Missing values: 0";
+      document.getElementById("utility-lookup-missing").value = "";
+      setUtilityLookupFeedback(message, state.activeJobId ? "warn" : "warn");
+      syncUtilityLookupContext();
+      syncUtilityLookupDownloadState();
+    }
+
+    async function runUtilityLookup() {
+      const inputEl = document.getElementById("utility-lookup-input");
+      const fieldEl = document.getElementById("utility-lookup-field");
+      const rawValues = tokenizeUtilityListInput(inputEl.value);
+      const distinctValues = computeDistinctValues(rawValues, "top");
+      document.getElementById("utility-lookup-input-total").textContent = `Input items: ${formatNumber(rawValues.length)}`;
+      document.getElementById("utility-lookup-input-unique").textContent = `Distinct values: ${formatNumber(distinctValues.length)}`;
+      setInputValidity(inputEl);
+      setInputValidity(fieldEl);
+
+      if (!state.activeJobId) {
+        setUtilityLookupFeedback("Chưa có job đang mở. Hãy mở một job trước khi tra dòng.", "error");
+        return;
+      }
+
+      const sheet = currentSheetValue();
+      if (!sheet) {
+        setUtilityLookupFeedback("Hãy chọn sheet ở tab Kết quả trước khi tra dòng.", "error");
+        return;
+      }
+
+      if (!fieldEl.value) {
+        setInputValidity(fieldEl, "Hãy chọn field tương ứng trước khi tra.");
+        setUtilityLookupFeedback("Hãy chọn field tương ứng trước khi tra.", "error");
+        return;
+      }
+
+      if (!distinctValues.length) {
+        setInputValidity(inputEl, "Hãy dán list value trước khi tra.");
+        setUtilityLookupFeedback("Chưa có dữ liệu đầu vào. Hãy dán list value cần tra.", "error");
+        return;
+      }
+
+      const appliedGrouping = getAppliedGroupingConfig();
+      const lookupExpression = buildUtilityLookupExpression(fieldEl.value, distinctValues);
+      const combinedFilterExpression = combineFilterExpressions(state.filter.appliedExpression || "", lookupExpression);
+      setUtilityLookupFeedback("Đang tra dòng theo list value...", "warn");
+      try {
+        const out = await api(`/api/v1/jobs/${state.activeJobId}/utility/lookup-rows`, {
+          method: "POST",
+          body: JSON.stringify({
+            sheet,
+            field: fieldEl.value,
+            values: distinctValues,
+            filter_expr: state.filter.appliedExpression || "",
+            group_enabled: Boolean(appliedGrouping),
+            group_field: appliedGrouping?.groupField || "",
+            distinct_field: appliedGrouping?.distinctField || "",
+            min_distinct: appliedGrouping?.minDistinct || 2
+          })
+        });
+        state.utilityLookup.lastQuery = {
+          jobId: state.activeJobId,
+          sheet,
+          field: fieldEl.value,
+          values: [...distinctValues],
+          lookupExpression,
+          filterExpression: state.filter.appliedExpression || "",
+          combinedFilterExpression,
+          grouping: appliedGrouping
+            ? {
+                groupField: appliedGrouping.groupField,
+                distinctField: appliedGrouping.distinctField,
+                minDistinct: appliedGrouping.minDistinct
+              }
+            : null
+        };
+        state.utilityLookup.lastResult = out;
+        document.getElementById("utility-lookup-matched-rows").textContent = `Matched rows: ${formatNumber(out.matched_rows_total || 0)}`;
+        document.getElementById("utility-lookup-matched-values").textContent = `Matched values: ${formatNumber(out.matched_values_total || 0)}`;
+        document.getElementById("utility-lookup-missing-count").textContent = `Missing values: ${formatNumber(out.missing_values_total || 0)}`;
+        document.getElementById("utility-lookup-missing").value = (out.missing_values || []).join("\n");
+        renderTableById("utility-lookup-table", out.columns || [], out.rows || []);
+        syncUtilityLookupContext();
+        syncUtilityLookupDownloadState();
+
+        const notes = [];
+        if (out.normalized_filter_expression) {
+          notes.push(`Filter ${out.normalized_filter_expression}`);
+        }
+        if (out.group_enabled) {
+          notes.push(`Group ${out.group_field} -> ${out.distinct_field}, min distinct = ${formatNumber(out.min_distinct || 0)}`);
+        }
+        const suffix = notes.length ? ` ${notes.join(" | ")}` : "";
+        if (out.matched_rows_total) {
+          setUtilityLookupFeedback(
+            `Đã tìm thấy ${formatNumber(out.matched_rows_total)} dòng từ ${formatNumber(out.matched_values_total)} value khớp trên sheet ${out.sheet}.${suffix}`,
+            "ok"
+          );
+        } else {
+          setUtilityLookupFeedback(
+            `Không tìm thấy dòng nào khớp với ${formatNumber(distinctValues.length)} value trên sheet ${out.sheet}.${suffix}`,
+            "warn"
+          );
+        }
+      } catch (err) {
+        document.getElementById("utility-lookup-table").innerHTML = "";
+        document.getElementById("utility-lookup-matched-rows").textContent = "Matched rows: 0";
+        document.getElementById("utility-lookup-matched-values").textContent = "Matched values: 0";
+        document.getElementById("utility-lookup-missing-count").textContent = "Missing values: 0";
+        document.getElementById("utility-lookup-missing").value = "";
+        state.utilityLookup.lastQuery = null;
+        state.utilityLookup.lastResult = null;
+        syncUtilityLookupDownloadState();
+        setUtilityLookupFeedback(`Tra dòng thất bại: ${err.message}`, "error");
+      }
+    }
+
+    async function downloadUtilityLookupCurrentSheet() {
+      const query = state.utilityLookup.lastQuery;
+      if (!state.activeJobId || !query) {
+        setUtilityLookupFeedback("Hãy tra dòng trước, rồi mới tải sheet hiện tại.", "error");
+        return;
+      }
+
+      setUtilityLookupFeedback("Đang chuẩn bị file Excel cho sheet hiện tại...", "warn");
+      try {
+        const request = {
+          method: "POST",
+          body: JSON.stringify({
+            sheet: query.sheet,
+            filter_expr: query.combinedFilterExpression,
+            group_enabled: Boolean(query.grouping),
+            group_field: query.grouping?.groupField || "",
+            distinct_field: query.grouping?.distinctField || "",
+            min_distinct: query.grouping?.minDistinct || 2
+          })
+        };
+        const created = await api(`/api/v1/jobs/${state.activeJobId}/exports`, request);
+        const exportId = created.export_id;
+        let tries = 0;
+        while (tries < 120) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          tries += 1;
+          const st = await api(`/api/v1/jobs/${state.activeJobId}/exports/${exportId}`);
+          if (st.status === "succeeded") {
+            window.open(`/api/v1/jobs/${state.activeJobId}/exports/${exportId}/download`, "_blank");
+            setUtilityLookupFeedback(`Đã tạo file Excel cho sheet ${query.sheet}.`, "ok");
+            return;
+          }
+          if (st.status === "failed") {
+            setUtilityLookupFeedback(`Tải file thất bại: ${st.error || "lỗi không xác định"}`, "error");
+            return;
+          }
+        }
+        setUtilityLookupFeedback("Export đang mất nhiều thời gian hơn dự kiến. Hãy thử lại.", "warn");
+      } catch (err) {
+        setUtilityLookupFeedback(`Tải file thất bại: ${err.message}`, "error");
+      }
+    }
+
+    function clearUtilityLookup() {
+      document.getElementById("utility-lookup-input").value = "";
+      document.getElementById("utility-lookup-missing").value = "";
+      setInputValidity(document.getElementById("utility-lookup-input"));
+      setInputValidity(document.getElementById("utility-lookup-field"));
+      resetUtilityLookupView();
+      syncUtilityLookupFieldOptions(currentSheetColumns());
+    }
+
     function setFilterMode(mode) {
       state.filter.mode = mode === "raw" ? "raw" : "builder";
       document.getElementById("filter-mode-builder").classList.toggle("active", state.filter.mode === "builder");
@@ -1693,6 +2132,7 @@
         : "Bật group condition ở tab Filter rồi bấm Áp filter để xem Grouped.";
       updateGroupingSheetContext();
       syncGroupedSearchState();
+      syncUtilityLookupContext();
     }
 
     function defaultNonVirtualSheet() {
@@ -1720,6 +2160,7 @@
       if (nextValue) sel.value = nextValue;
       sel.disabled = false;
       updateGroupingSheetContext();
+      syncUtilityLookupFieldOptions(currentSheetColumns());
     }
 
     function currentSheetColumns() {
@@ -2049,14 +2490,15 @@
       setPagingState({ page: 1, total_pages: 1, has_prev: false, has_next: false });
       syncSearchFieldOptions([]);
       syncGroupingControlsState([]);
+      syncUtilityLookupFieldOptions([]);
       syncGroupedSearchState();
       clearResultsSearchValidation();
       clearGroupingValidation();
       setInputValidity(document.getElementById("group-search-text"));
     }
 
-    function renderResultsTable(columns, rows) {
-      const table = document.getElementById("results-table");
+    function renderTableById(tableId, columns, rows) {
+      const table = document.getElementById(tableId);
       if (!columns || !columns.length) {
         table.innerHTML = "";
         return;
@@ -2067,6 +2509,10 @@
         return `<tr>${cells}</tr>`;
       }).join("");
       table.innerHTML = `${thead}<tbody>${bodyRows}</tbody>`;
+    }
+
+    function renderResultsTable(columns, rows) {
+      renderTableById("results-table", columns, rows);
     }
 
     function applyQuickSearch(rows, columns) {
@@ -2357,6 +2803,7 @@
           resetFilterState();
           renderSheetOptions();
           populateBuilderFields([]);
+          clearUtilityLookup();
         }
         resetResultsQueryState();
         resetResultsView("Dang cho ket qua va danh sach sheet...");
@@ -2596,6 +3043,7 @@
         resetFilterState();
         renderSheetOptions();
         populateBuilderFields([]);
+        clearUtilityLookup();
       }
       resetResultsQueryState();
       resetResultsView("Dang nap lai ket qua cua job...");
@@ -2771,6 +3219,7 @@
       setFilterFeedback(messages.join("\n"), "ok");
       invalidateResultCaches();
       resetResultsQueryState();
+      resetUtilityLookupView("Filter context đã đổi. Hãy bấm Tìm dòng lại nếu muốn tra theo điều kiện mới.");
       await reloadCurrentResultsView();
       activateTab("results");
     }
@@ -2779,6 +3228,7 @@
       resetFilterState();
       invalidateResultCaches();
       resetResultsQueryState();
+      resetUtilityLookupView("Đã xóa filter áp dụng. Hãy bấm Tìm dòng lại nếu muốn tra trên toàn bộ sheet hiện tại.");
       if (reloadResults && state.activeJobId && state.sheetItems.length) {
         await reloadCurrentResultsView();
       }
@@ -2822,6 +3272,7 @@
       invalidateResultCaches();
       clearResultsSearchValidation();
       clearGroupingValidation();
+      resetUtilityLookupView("Sheet đã đổi. Hãy bấm Tìm dòng lại nếu muốn tra theo sheet mới.");
       await reconcileAppliedContextForCurrentSheet();
       resetResultsQueryState();
       await reloadCurrentResultsView();
@@ -2988,22 +3439,71 @@
     document.getElementById("btn-filter-clear").addEventListener("click", () => {
       clearFilter();
     });
+    document.getElementById("btn-utility-distinct-run").addEventListener("click", () => {
+      runUtilityDistinct();
+    });
+    document.getElementById("btn-utility-distinct-copy").addEventListener("click", () => {
+      runUtilityDistinct({ copyAfter: true });
+    });
+    document.getElementById("btn-utility-distinct-clear").addEventListener("click", () => {
+      clearUtilityDistinct();
+    });
+    document.getElementById("utility-distinct-input").addEventListener("input", () => {
+      setInputValidity(document.getElementById("utility-distinct-input"));
+    });
+    document.getElementById("utility-distinct-input").addEventListener("keydown", evt => {
+      if (evt.key === "Enter" && (evt.ctrlKey || evt.metaKey)) {
+        evt.preventDefault();
+        runUtilityDistinct();
+      }
+    });
+    document.getElementById("btn-utility-lookup-run").addEventListener("click", () => {
+      runUtilityLookup();
+    });
+    document.getElementById("btn-utility-lookup-clear").addEventListener("click", () => {
+      clearUtilityLookup();
+    });
+    document.getElementById("btn-utility-lookup-download").addEventListener("click", () => {
+      downloadUtilityLookupCurrentSheet();
+    });
+    document.getElementById("utility-lookup-input").addEventListener("input", () => {
+      setInputValidity(document.getElementById("utility-lookup-input"));
+      const values = tokenizeUtilityListInput(document.getElementById("utility-lookup-input").value);
+      const distinctValues = computeDistinctValues(values, "top");
+      document.getElementById("utility-lookup-input-total").textContent = `Input items: ${formatNumber(values.length)}`;
+      document.getElementById("utility-lookup-input-unique").textContent = `Distinct values: ${formatNumber(distinctValues.length)}`;
+    });
+    document.getElementById("utility-lookup-input").addEventListener("keydown", evt => {
+      if (evt.key === "Enter" && (evt.ctrlKey || evt.metaKey)) {
+        evt.preventDefault();
+        runUtilityLookup();
+      }
+    });
+    document.getElementById("utility-lookup-field").addEventListener("change", () => {
+      setInputValidity(document.getElementById("utility-lookup-field"));
+    });
     document.getElementById("from-date").addEventListener("change", () => {
       setInputValidity(document.getElementById("from-date"));
       syncRunDateInputs();
     });
-    document.getElementById("to-date").addEventListener("change", syncRunDateInputs);
-    document.getElementById("to-date").addEventListener("input", syncRunDateInputs);
-    document.getElementById("to-date").addEventListener("keydown", evt => {
-      evt.preventDefault();
+    document.getElementById("to-date").addEventListener("change", () => {
+      setInputValidity(document.getElementById("to-date"));
+      syncRunDateInputs();
     });
-    window.addEventListener("focus", syncRunDateInputs);
+    document.getElementById("to-date").addEventListener("input", () => {
+      setInputValidity(document.getElementById("to-date"));
+    });
+    window.addEventListener("focus", () => {
+      syncRunDateInputs();
+    });
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) syncRunDateInputs();
     });
 
     syncBuilderValueMode();
     syncRunDateInputs();
+    clearUtilityDistinct();
+    clearUtilityLookup();
     resetFilterState();
     resetResultsView();
     loadMeta();
