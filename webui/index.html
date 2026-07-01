@@ -414,6 +414,23 @@
       font-weight: 700;
       color: #244269;
     }
+    .history-export-status {
+      display: inline-flex;
+      align-items: center;
+      max-width: 240px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #eef2fb;
+      color: #244269;
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .history-export-status.status-running { background: #ecf4ff; color: #0a4fba; }
+    .history-export-status.status-succeeded { background: #eaf8ef; color: #0f7d45; }
+    .history-export-status.status-failed { background: #fdeceb; color: #b32821; }
     .hero-summary {
       display: grid;
       gap: 12px;
@@ -1602,6 +1619,11 @@
       utilityLookup: {
         lastQuery: null,
         lastResult: null
+      },
+      exportState: {
+        results: false,
+        utility: false,
+        history: {}
       }
     };
 
@@ -1786,6 +1808,97 @@
       el.textContent = message;
     }
 
+    function anyExportInFlight() {
+      return state.exportState.results || state.exportState.utility;
+    }
+
+    function syncPrimaryDownloadButton() {
+      const btn = document.getElementById("btn-download");
+      btn.disabled = !state.activeJobId || anyExportInFlight();
+    }
+
+    function setExportBusy(kind, busy) {
+      state.exportState[kind] = Boolean(busy);
+      syncPrimaryDownloadButton();
+      syncUtilityLookupDownloadState();
+    }
+
+    function triggerBrowserDownload(url) {
+      const link = document.createElement("a");
+      link.href = url;
+      link.rel = "noopener";
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+
+    function cssAttrValue(value) {
+      return String(value ?? "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    }
+
+    function getHistoryExportState(jobId) {
+      const key = String(jobId || "");
+      if (!key) {
+        return { status: "idle", exportId: "", error: "" };
+      }
+      if (!state.exportState.history[key]) {
+        state.exportState.history[key] = { status: "idle", exportId: "", error: "" };
+      }
+      return state.exportState.history[key];
+    }
+
+    function isHistoryExportBusy(jobId) {
+      const status = getHistoryExportState(jobId).status;
+      return status === "pending" || status === "running";
+    }
+
+    function historyExportStatusLabel(jobId) {
+      const item = getHistoryExportState(jobId);
+      if (item.status === "pending") return "dang cho";
+      if (item.status === "running") return "dang xu ly";
+      if (item.status === "succeeded") return "hoan tat";
+      if (item.status === "failed") return `that bai${item.error ? `: ${item.error}` : ""}`;
+      return "san sang";
+    }
+
+    function historyExportStatusClass(jobId) {
+      const status = getHistoryExportState(jobId).status;
+      if (status === "pending" || status === "running") return "status-running";
+      if (status === "succeeded") return "status-succeeded";
+      if (status === "failed") return "status-failed";
+      return "";
+    }
+
+    function historyDownloadButtonLabel(jobId) {
+      return isHistoryExportBusy(jobId) ? "dang tao..." : "tai file";
+    }
+
+    function setHistoryExportState(jobId, patch) {
+      const key = String(jobId || "");
+      if (!key) return;
+      state.exportState.history[key] = {
+        ...getHistoryExportState(key),
+        ...patch
+      };
+      renderHistoryExportState(key);
+    }
+
+    function renderHistoryExportState(jobId) {
+      const key = String(jobId || "");
+      if (!key) return;
+      const selectorKey = cssAttrValue(key);
+      const btn = document.querySelector(`[data-history-download="${selectorKey}"]`);
+      if (btn) {
+        btn.disabled = isHistoryExportBusy(key);
+        btn.textContent = historyDownloadButtonLabel(key);
+      }
+      const cell = document.querySelector(`[data-history-export-status="${selectorKey}"]`);
+      if (cell) {
+        cell.innerHTML = `<span class="history-export-status ${historyExportStatusClass(key)}" title="${escapeAttr(historyExportStatusLabel(key))}">${escapeHtml(historyExportStatusLabel(key))}</span>`;
+      }
+    }
+
     function tokenizeUtilityListInput(text) {
       return String(text || "")
         .split(/[\r\n,;]+/)
@@ -1896,7 +2009,7 @@
 
     function syncUtilityLookupDownloadState() {
       const btn = document.getElementById("btn-utility-lookup-download");
-      btn.disabled = !state.activeJobId || !state.utilityLookup.lastQuery;
+      btn.disabled = !state.activeJobId || !state.utilityLookup.lastQuery || anyExportInFlight();
     }
 
     function buildUtilityLookupExpression(field, values) {
@@ -2042,8 +2155,13 @@
         setUtilityLookupFeedback("Hãy tra dòng trước, rồi mới tải sheet hiện tại.", "error");
         return;
       }
+      if (anyExportInFlight()) {
+        setUtilityLookupFeedback("Đang có một export khác chạy. Hãy chờ file hiện tại hoàn tất.", "warn");
+        return;
+      }
 
       setUtilityLookupFeedback("Đang chuẩn bị file Excel cho sheet hiện tại...", "warn");
+      setExportBusy("utility", true);
       try {
         const request = {
           method: "POST",
@@ -2064,7 +2182,7 @@
           tries += 1;
           const st = await api(`/api/v1/jobs/${state.activeJobId}/exports/${exportId}`);
           if (st.status === "succeeded") {
-            window.open(`/api/v1/jobs/${state.activeJobId}/exports/${exportId}/download`, "_blank");
+            triggerBrowserDownload(`/api/v1/jobs/${state.activeJobId}/exports/${exportId}/download`);
             setUtilityLookupFeedback(`Đã tạo file Excel cho sheet ${query.sheet}.`, "ok");
             return;
           }
@@ -2076,6 +2194,8 @@
         setUtilityLookupFeedback("Export đang mất nhiều thời gian hơn dự kiến. Hãy thử lại.", "warn");
       } catch (err) {
         setUtilityLookupFeedback(`Tải file thất bại: ${err.message}`, "error");
+      } finally {
+        setExportBusy("utility", false);
       }
     }
 
@@ -2805,6 +2925,7 @@
           populateBuilderFields([]);
           clearUtilityLookup();
         }
+        syncPrimaryDownloadButton();
         resetResultsQueryState();
         resetResultsView("Dang cho ket qua va danh sach sheet...");
         document.getElementById("active-job-id").textContent = state.activeJobId;
@@ -3004,16 +3125,19 @@
           { key: "finished_at", label: "finished_at" }
         ];
         const table = document.getElementById("history-table");
-        const thead = "<thead><tr>" + cols.map(col => `<th>${escapeHtml(col.label)}</th>`).join("") + "<th>actions</th></tr></thead>";
+        const thead = "<thead><tr>"
+          + cols.map(col => `<th>${escapeHtml(col.label)}</th>`).join("")
+          + "<th>export</th><th>actions</th></tr></thead>";
         const visibleItems = (out.items || []).filter(item => {
           const statusValue = String(item?.status ?? "").trim().toLowerCase();
           return Boolean(item?.has_output) && statusValue !== "false";
         });
         if (!visibleItems.length) {
-          table.innerHTML = `${thead}<tbody><tr><td colspan="${cols.length + 1}">Khong co job nao mo lai duoc.</td></tr></tbody>`;
+          table.innerHTML = `${thead}<tbody><tr><td colspan="${cols.length + 2}">Khong co job nao mo lai duoc.</td></tr></tbody>`;
           return;
         }
         const body = visibleItems.map(item => {
+          const jobId = String(item?.job_id || "");
           const cells = cols.map(col => {
             let value = item?.[col.key] ?? "";
             if (col.key === "created_at" || col.key === "finished_at") {
@@ -3021,11 +3145,17 @@
             }
             return `<td>${escapeHtml(value)}</td>`;
           }).join("");
-          const actions = `
-            <button onclick="openJob('${escapeAttr(item.job_id)}')">mo</button>
-            ${item.has_output ? `<button onclick="downloadJob('${escapeAttr(item.job_id)}')">tai file</button>` : ""}
+          const exportStatus = `
+            <td data-history-export-status="${escapeAttr(jobId)}">
+              <span class="history-export-status ${historyExportStatusClass(jobId)}" title="${escapeAttr(historyExportStatusLabel(jobId))}">${escapeHtml(historyExportStatusLabel(jobId))}</span>
+            </td>
           `;
-          return `<tr>${cells}<td>${actions}</td></tr>`;
+          const disabled = isHistoryExportBusy(jobId) ? " disabled" : "";
+          const actions = `
+            <button onclick="openJob('${escapeAttr(jobId)}')">mo</button>
+            ${item.has_output ? `<button data-history-download="${escapeAttr(jobId)}" onclick="downloadHistoryJob('${escapeAttr(jobId)}')"${disabled}>${escapeHtml(historyDownloadButtonLabel(jobId))}</button>` : ""}
+          `;
+          return `<tr>${cells}${exportStatus}<td>${actions}</td></tr>`;
         }).join("");
         table.innerHTML = `${thead}<tbody>${body}</tbody>`;
       } catch (err) {
@@ -3038,6 +3168,7 @@
       const changedJob = state.activeJobId !== jobId;
       state.activeJobId = jobId;
       state.logOffset = 0;
+      syncPrimaryDownloadButton();
       if (changedJob) {
         state.sheetItems = [];
         resetFilterState();
@@ -3069,9 +3200,24 @@
       return null;
     }
 
-    async function downloadJob(jobId, context = null) {
+    async function downloadJob(jobId, context = null, options = {}) {
       const msg = document.getElementById("results-msg");
-      msg.textContent = "Dang chuan bi file export...";
+      const source = options.source || "results";
+      const fromHistory = source === "history";
+      if (fromHistory && isHistoryExportBusy(jobId)) {
+        renderHistoryExportState(jobId);
+        return;
+      }
+      if (!fromHistory && anyExportInFlight()) {
+        msg.textContent = "Dang co mot export khac chay. Hay doi file hien tai hoan tat.";
+        return;
+      }
+      if (fromHistory) {
+        setHistoryExportState(jobId, { status: "pending", exportId: "", error: "" });
+      } else {
+        msg.textContent = "Dang chuan bi file export...";
+        setExportBusy("results", true);
+      }
       try {
         const request = { method: "POST" };
         if (context && (context.sheet || context.filter_expr || context.group_enabled)) {
@@ -3079,25 +3225,53 @@
         }
         const created = await api(`/api/v1/jobs/${jobId}/exports`, request);
         const exportId = created.export_id;
+        if (fromHistory) {
+          setHistoryExportState(jobId, { status: created.status || "pending", exportId, error: "" });
+        }
         let tries = 0;
         while (tries < 120) {
           await new Promise(resolve => setTimeout(resolve, 1000));
           tries += 1;
           const st = await api(`/api/v1/jobs/${jobId}/exports/${exportId}`);
+          if (fromHistory) {
+            setHistoryExportState(jobId, { status: st.status || "running", exportId, error: st.error || "" });
+          }
           if (st.status === "succeeded") {
-            window.open(`/api/v1/jobs/${jobId}/exports/${exportId}/download`, "_blank");
-            msg.textContent = "File export da san sang.";
+            triggerBrowserDownload(`/api/v1/jobs/${jobId}/exports/${exportId}/download`);
+            if (!fromHistory) {
+              msg.textContent = "File export da san sang.";
+            }
             return;
           }
           if (st.status === "failed") {
-            msg.textContent = `Export that bai: ${st.error || "loi khong xac dinh"}`;
+            if (fromHistory) {
+              setHistoryExportState(jobId, { status: "failed", exportId, error: st.error || "loi khong xac dinh" });
+            } else {
+              msg.textContent = `Export that bai: ${st.error || "loi khong xac dinh"}`;
+            }
             return;
           }
         }
-        msg.textContent = "Export dang mat nhieu thoi gian hon du kien. Hay thu lai.";
+        if (fromHistory) {
+          setHistoryExportState(jobId, { status: "failed", exportId, error: "export qua thoi gian cho" });
+        } else {
+          msg.textContent = "Export dang mat nhieu thoi gian hon du kien. Hay thu lai.";
+        }
       } catch (err) {
-        msg.textContent = `Export that bai: ${err.message}`;
+        if (fromHistory) {
+          setHistoryExportState(jobId, { status: "failed", error: err.message || "loi khong xac dinh" });
+        } else {
+          msg.textContent = `Export that bai: ${err.message}`;
+        }
+      } finally {
+        if (!fromHistory) {
+          setExportBusy("results", false);
+        }
       }
+    }
+
+    function downloadHistoryJob(jobId) {
+      return downloadJob(jobId, null, { source: "history" });
     }
 
     async function validateCurrentFilter({ showFeedback = true, expression = getCurrentDraftExpression(), sheet = currentSheetValue() } = {}) {
@@ -3506,11 +3680,13 @@
     clearUtilityLookup();
     resetFilterState();
     resetResultsView();
+    syncPrimaryDownloadButton();
     loadMeta();
     loadHistory();
 
     window.openJob = openJob;
     window.downloadJob = downloadJob;
+    window.downloadHistoryJob = downloadHistoryJob;
   </script>
 </body>
 </html>

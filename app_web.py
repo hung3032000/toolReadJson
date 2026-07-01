@@ -19,12 +19,18 @@ import pandas as pd
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
+from openpyxl import Workbook
 from pydantic import BaseModel, Field
 
 try:
     import duckdb
 except Exception:  # pragma: no cover - optional dependency
     duckdb = None
+
+try:
+    import pyarrow.parquet as pq
+except Exception:  # pragma: no cover - optional dependency
+    pq = None
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -34,6 +40,9 @@ ARTIFACTS_DIR.mkdir(exist_ok=True)
 STATE_DB = BASE_DIR / "web_state.db"
 RETENTION_DAYS = 7
 MAX_LOGS_IN_MEMORY = 3000
+EXCEL_EXPORT_MAX_ROWS = 1_000_000
+EXPORT_BATCH_SIZE = 50_000
+EXCEL_SHEET_TITLE_LIMIT = 31
 
 if str(CODE_DIR) not in sys.path:
     sys.path.append(str(CODE_DIR))
@@ -54,6 +63,22 @@ def _safe_sheet_name(sheet_name: str, idx: int) -> str:
     if not out:
         out = f"sheet_{idx}"
     return out
+
+
+def _excel_cell_value(value: Any) -> Any:
+    if pd.isna(value):
+        return None
+    if hasattr(value, "to_pydatetime"):
+        try:
+            return value.to_pydatetime()
+        except Exception:
+            return value
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except Exception:
+            return value
+    return value
 
 
 def _json_load(text: Optional[str], default):
@@ -570,7 +595,121 @@ class JobManager:
             out_path = self._build_export_file(job_id, export_id, context=context or {})
             self._store.update_export(export_id, "succeeded", file_path=out_path, finished=True)
         except Exception as exc:
-            self._store.update_export(export_id, "failed", error=str(exc), finished=True)
+            self._store.update_export(export_id, "failed", error=self._friendly_export_error(exc), finished=True)
+
+    def _friendly_export_error(self, exc: Exception) -> str:
+        text = str(exc).strip() or exc.__class__.__name__
+        lowered = text.lower()
+        if "permission denied" in lowered:
+            return "Khong the ghi file Excel. Hay dong file dang mo roi thu lai."
+        if "no sheet data to export" in lowered:
+            return "Khong co du lieu sheet de xuat Excel."
+        if "job not found" in lowered:
+            return "Khong tim thay job de xuat Excel."
+        return text
+
+    def _unique_export_sheet_title(self, used_names: set, base_name: str, part_idx: int, force_suffix: bool) -> str:
+        base = _safe_sheet_name(base_name, len(used_names) + 1)
+        suffix = f"_{part_idx}" if force_suffix or part_idx > 1 else ""
+        max_base_len = max(1, EXCEL_SHEET_TITLE_LIMIT - len(suffix))
+        candidate = f"{base[:max_base_len]}{suffix}"
+        seq = 1
+        while candidate in used_names:
+            extra = f"_{seq}"
+            max_base_len = max(1, EXCEL_SHEET_TITLE_LIMIT - len(suffix) - len(extra))
+            candidate = f"{base[:max_base_len]}{suffix}{extra}"
+            seq += 1
+        used_names.add(candidate)
+        return candidate
+
+    def _new_export_sheet(self, workbook: Workbook, used_names: set, base_name: str, part_idx: int, force_suffix: bool, columns: List[str]):
+        title = self._unique_export_sheet_title(used_names, base_name, part_idx, force_suffix)
+        ws = workbook.create_sheet(title=title)
+        if columns:
+            ws.append(list(columns))
+        return ws
+
+    def _dataset_columns_for_path(self, data_path: Path) -> List[str]:
+        if data_path.suffix.lower() == ".parquet":
+            if pq is not None:
+                return list(pq.ParquetFile(data_path).schema_arrow.names)
+            return list(pd.read_parquet(data_path, engine="pyarrow").columns)
+        return list(pd.read_csv(data_path, nrows=0).columns)
+
+    def _iter_dataset_batches(self, data_path: Path, columns: List[str]):
+        if data_path.suffix.lower() == ".parquet":
+            if pq is not None:
+                parquet_file = pq.ParquetFile(data_path)
+                for batch in parquet_file.iter_batches(batch_size=EXPORT_BATCH_SIZE, columns=columns or None):
+                    yield batch.to_pandas()
+                return
+            yield pd.read_parquet(data_path, engine="pyarrow", columns=columns or None)
+            return
+
+        for chunk in pd.read_csv(data_path, chunksize=EXPORT_BATCH_SIZE):
+            yield chunk.reindex(columns=columns)
+
+    def _append_dataframe_to_workbook(
+        self,
+        workbook: Workbook,
+        used_names: set,
+        base_name: str,
+        df: pd.DataFrame,
+        columns: List[str],
+    ) -> int:
+        columns = list(columns or df.columns.tolist())
+        frame = df.reindex(columns=columns)
+        total_rows = int(len(frame.index))
+        part_count = max(1, int(math.ceil(total_rows / float(EXCEL_EXPORT_MAX_ROWS)))) if total_rows else 1
+        rows_written = 0
+
+        for part_idx in range(1, part_count + 1):
+            ws = self._new_export_sheet(workbook, used_names, base_name, part_idx, part_count > 1, columns)
+            part_frame = frame.iloc[rows_written : rows_written + EXCEL_EXPORT_MAX_ROWS]
+            for row in part_frame.itertuples(index=False, name=None):
+                ws.append([_excel_cell_value(value) for value in row])
+            rows_written += int(len(part_frame.index))
+
+        return rows_written
+
+    def _append_dataset_path_to_workbook(
+        self,
+        workbook: Workbook,
+        used_names: set,
+        base_name: str,
+        data_path: Path,
+        expected_rows: Optional[int] = None,
+    ) -> int:
+        columns = self._dataset_columns_for_path(data_path)
+        part_count = 0
+        rows_in_current_sheet = EXCEL_EXPORT_MAX_ROWS
+        ws = None
+        rows_written = 0
+        force_suffix = bool(expected_rows and expected_rows > EXCEL_EXPORT_MAX_ROWS)
+
+        for batch_df in self._iter_dataset_batches(data_path, columns):
+            if batch_df.empty and rows_written:
+                continue
+            batch_df = batch_df.reindex(columns=columns)
+            offset = 0
+            while offset < len(batch_df.index):
+                if ws is None or rows_in_current_sheet >= EXCEL_EXPORT_MAX_ROWS:
+                    part_count += 1
+                    ws = self._new_export_sheet(workbook, used_names, base_name, part_count, force_suffix or part_count > 1, columns)
+                    rows_in_current_sheet = 0
+                remaining = EXCEL_EXPORT_MAX_ROWS - rows_in_current_sheet
+                part_df = batch_df.iloc[offset : offset + remaining]
+                for row in part_df.itertuples(index=False, name=None):
+                    ws.append([_excel_cell_value(value) for value in row])
+                chunk_rows = int(len(part_df.index))
+                rows_written += chunk_rows
+                rows_in_current_sheet += chunk_rows
+                offset += chunk_rows
+
+        if part_count == 0:
+            self._new_export_sheet(workbook, used_names, base_name, 1, force_suffix, columns)
+
+        return rows_written
 
     def _build_export_file(self, job_id: str, export_id: str, context: Optional[Dict[str, Any]] = None) -> str:
         job = self.get_job(job_id)
@@ -581,45 +720,78 @@ class JobManager:
         export_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_file = export_dir / f"export_{export_id}_{ts}.xlsx"
+        tmp_file = export_dir / f"export_{export_id}_{ts}.tmp.xlsx"
+        workbook = Workbook(write_only=True)
+        used_sheet_names = set()
 
-        context = context or {}
-        if context.get("sheet"):
-            sheet = str(context.get("sheet") or ALL_SHEETS_NAME)
-            filter_expr = str(context.get("filter_expr") or "")
-            df, _, schema, _, _, _ = self.materialize_query_frame(
-                job_id,
-                sheet,
-                filter_expr=filter_expr,
-                group_enabled=bool(context.get("group_enabled")),
-                group_field=str(context.get("group_field") or ""),
-                distinct_field=str(context.get("distinct_field") or ""),
-                min_distinct=context.get("min_distinct") or 2,
-            )
-            output_sheet = "filtered_results" if sheet == ALL_SHEETS_NAME else _safe_sheet_name(sheet, 1)
-            output_sheet = output_sheet[:31] or "filtered_results"
-            with pd.ExcelWriter(out_file, engine="openpyxl", mode="w") as writer:
-                df.reindex(columns=schema.get("columns", [])).to_excel(writer, sheet_name=output_sheet, index=False)
+        try:
+            context = context or {}
+            if context.get("sheet"):
+                sheet = str(context.get("sheet") or ALL_SHEETS_NAME)
+                filter_expr = str(context.get("filter_expr") or "")
+                df, _, schema, _, _, _ = self.materialize_query_frame(
+                    job_id,
+                    sheet,
+                    filter_expr=filter_expr,
+                    group_enabled=bool(context.get("group_enabled")),
+                    group_field=str(context.get("group_field") or ""),
+                    distinct_field=str(context.get("distinct_field") or ""),
+                    min_distinct=context.get("min_distinct") or 2,
+                )
+                output_sheet = "filtered_results" if sheet == ALL_SHEETS_NAME else sheet
+                self._append_dataframe_to_workbook(
+                    workbook,
+                    used_sheet_names,
+                    output_sheet,
+                    df,
+                    list(schema.get("columns", [])),
+                )
+            else:
+                meta = self.ensure_result_cache(job_id)
+                sheet_map = [
+                    (x.get("name"), x.get("path"), x.get("row_count"))
+                    for x in meta.get("sheets", [])
+                ]
+                if not sheet_map:
+                    raise Exception("no sheet data to export")
+
+                exported_any_sheet = False
+                for sheet_name, path, row_count in sheet_map:
+                    if not sheet_name or not path:
+                        continue
+                    data_path = Path(path)
+                    if not data_path.exists():
+                        continue
+                    self._append_dataset_path_to_workbook(
+                        workbook,
+                        used_sheet_names,
+                        str(sheet_name),
+                        data_path,
+                        expected_rows=int(row_count or 0),
+                    )
+                    exported_any_sheet = True
+
+                if not exported_any_sheet:
+                    raise Exception("no sheet data to export")
+
+            workbook.save(tmp_file)
+            if not tmp_file.exists() or tmp_file.stat().st_size <= 0:
+                raise Exception("Excel export created an empty file")
+            tmp_file.replace(out_file)
             return str(out_file)
-
-        meta = self.ensure_result_cache(job_id)
-        sheet_map = [(x.get("name"), x.get("path")) for x in meta.get("sheets", [])]
-        if not sheet_map:
-            raise Exception("no sheet data to export")
-
-        with pd.ExcelWriter(out_file, engine="openpyxl", mode="w") as writer:
-            for sheet_name, path in sheet_map:
-                if not sheet_name or not path:
-                    continue
-                p = Path(path)
-                if not p.exists():
-                    continue
-                if p.suffix.lower() == ".parquet":
-                    df = pd.read_parquet(p)
-                else:
-                    df = pd.read_csv(p)
-                df.to_excel(writer, sheet_name=str(sheet_name)[:31], index=False)
-
-        return str(out_file)
+        except Exception:
+            for candidate in (tmp_file, out_file):
+                if candidate.exists():
+                    try:
+                        candidate.unlink()
+                    except OSError:
+                        pass
+            raise
+        finally:
+            try:
+                workbook.close()
+            except Exception:
+                pass
 
     def _execute(self, job_id: str):
         with self._lock:
