@@ -1540,34 +1540,11 @@
       if (columns.includes(currentSearch)) searchSel.value = currentSearch;
     }
 
-    document.getElementById("run-form").addEventListener("submit", startJob);
-    document.getElementById("btn-search").addEventListener("click", () => { state.page = 1; loadResults(); });
-    document.getElementById("sheet").addEventListener("change", () => {
-      resetResultsQueryState();
-      loadResults();
-    });
-    document.getElementById("btn-refresh-sheets").addEventListener("click", loadSheets);
-    document.getElementById("btn-download").addEventListener("click", () => {
-      if (!state.activeJobId) return;
-      downloadJob(state.activeJobId);
-    });
-    document.getElementById("btn-prev").addEventListener("click", () => {
-      if (state.page > 1) {
-        state.page -= 1;
-        loadResults();
-      }
-    });
-    document.getElementById("btn-next").addEventListener("click", () => {
-      if (!document.getElementById("btn-next").disabled) {
-        state.page += 1;
-        loadResults();
-      }
-    });
-    document.getElementById("btn-history").addEventListener("click", loadHistory);
-
-    resetResultsView();
-    loadMeta();
-    loadHistory();
+    // NOTE: Event listeners and initialization for these controls are registered
+    // in the main script block below. The earlier duplicate registrations were
+    // removed because they double-fired every action (e.g. the export button
+    // triggered a no-context "export everything" call that pre-empted the
+    // filter/group-aware export).
   </script>
   <script>
     const tabs = [...document.querySelectorAll(".tab-btn")];
@@ -3394,6 +3371,11 @@
       invalidateResultCaches();
       resetResultsQueryState();
       resetUtilityLookupView("Filter context đã đổi. Hãy bấm Tìm dòng lại nếu muốn tra theo điều kiện mới.");
+      if (state.grouping.applied) {
+        setResultsView("grouped");
+      } else if (state.resultsView === "grouped") {
+        setResultsView("rows");
+      }
       await reloadCurrentResultsView();
       activateTab("results");
     }
