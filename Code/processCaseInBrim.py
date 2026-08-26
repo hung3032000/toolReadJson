@@ -1,5 +1,19 @@
+import numpy as np
 import pandas as pd
 total_case_map = {}
+
+# Tên sheet tổng chứa toàn bộ dòng + các cột cờ CASE_* để kết hợp case tự do.
+ALL_CASES_SHEET = "all_cases"
+
+# Các cột cờ, đặt tên để hiển thị/tra cứu nhất quán ở UI và filter.
+CASE_FLAG_COLUMNS = [
+    "CASE_SPLIT",
+    "CASE_SPLIT_MANUAL",
+    "CASE_GROUP",
+    "CASE_SUPPLEMENT",
+    "CASE_SINGLE",
+    "CASE_MERGE",
+]
 
 
 def processDataRawToRealData(data):
@@ -30,7 +44,87 @@ def processDataRawToRealData(data):
     dataframes.update(supplementCaseData(data, ctx))
     # dataframes.update(mergeCase(data, ctx))
     dataframes.update(singleCase(data, ctx))  # single tính SAU CÙNG, loại chéo
+
+    # Sheet tổng: mỗi dòng gắn cờ thuộc case nào => kết hợp group/split/... tùy ý ở tab Filter.
+    dataframes.update(caseFlagsSheet(data, ctx))
     return dataframes
+
+
+def _case_key_sets(data, ctx):
+    """Tính các tập khóa của từng case (khớp đúng logic 5 sheet hiện có)."""
+    split_keys = set(ctx["split_keys"])
+    split_manual_keys = set(ctx["split_manual_keys"])
+    # split_manual sheet là phần "manual thuần" = có >1 INV_NO nhưng KHÔNG phải split
+    manual_only_keys = split_manual_keys - split_keys
+
+    # group: INV_NO có >1 ZZ_IF_ID VÀ >1 BL_SRC_NO
+    g = data.groupby('INV_NO').agg(
+        nif=('ZZ_IF_ID', 'nunique'),
+        nbl=('BL_SRC_NO', 'nunique'),
+    )
+    group_inv_keys = set(g[(g['nif'] > 1) & (g['nbl'] > 1)].index)
+
+    # supplement: cặp (INV_NO, BL_SRC_NO) có >1 ZZ_IF_ID
+    s = data.groupby(['INV_NO', 'BL_SRC_NO']).agg(nif=('ZZ_IF_ID', 'nunique')).reset_index()
+    supplement_pairs = set(
+        map(tuple, s[s['nif'] > 1][['INV_NO', 'BL_SRC_NO']].itertuples(index=False, name=None))
+    )
+
+    # single: INV_NO chỉ 1 ZZ_IF_ID, và loại INV mà IF của nó thuộc split_manual (khớp singleCase)
+    inv_if_n = data.groupby('INV_NO')['ZZ_IF_ID'].nunique()
+    single_inv = set(inv_if_n[inv_if_n == 1].index)
+    inv_if_first = data.groupby('INV_NO')['ZZ_IF_ID'].first()
+    single_inv_keys = {inv for inv in single_inv if inv_if_first.get(inv) not in split_manual_keys}
+
+    # merge (multi-currency): INV_NO có >1 INV_ISS_CURR_CD
+    if 'INV_ISS_CURR_CD' in data.columns:
+        m = data.groupby('INV_NO')['INV_ISS_CURR_CD'].nunique()
+        merge_inv_keys = set(m[m > 1].index)
+    else:
+        merge_inv_keys = set()
+
+    return {
+        "split": split_keys,
+        "manual_only": manual_only_keys,
+        "group": group_inv_keys,
+        "supplement": supplement_pairs,
+        "single": single_inv_keys,
+        "merge": merge_inv_keys,
+    }
+
+
+def caseFlagsSheet(data, ctx):
+    """Sheet tổng: toàn bộ dòng + cột cờ 'Y'/'N' cho từng case + CASE_TAGS."""
+    keys = _case_key_sets(data, ctx)
+    out = data.drop_duplicates().reset_index(drop=True)
+
+    def yn(mask):
+        return np.where(np.asarray(mask), 'Y', 'N')
+
+    supplement_index = pd.MultiIndex.from_arrays([out['INV_NO'], out['BL_SRC_NO']])
+
+    out['CASE_SPLIT'] = yn(out['ZZ_IF_ID'].isin(keys["split"]))
+    out['CASE_SPLIT_MANUAL'] = yn(out['ZZ_IF_ID'].isin(keys["manual_only"]))
+    out['CASE_GROUP'] = yn(out['INV_NO'].isin(keys["group"]))
+    out['CASE_SUPPLEMENT'] = yn(supplement_index.isin(keys["supplement"]))
+    out['CASE_SINGLE'] = yn(out['INV_NO'].isin(keys["single"]))
+    out['CASE_MERGE'] = yn(out['INV_NO'].isin(keys["merge"]))
+
+    # CASE_TAGS: danh sách case (viết thường) mà dòng thuộc về, ngăn cách bằng ", " để dễ đọc/lọc LIKE.
+    tag_names = {
+        "CASE_SPLIT": "split",
+        "CASE_SPLIT_MANUAL": "split_manual",
+        "CASE_GROUP": "group",
+        "CASE_SUPPLEMENT": "supplement",
+        "CASE_SINGLE": "single",
+        "CASE_MERGE": "merge",
+    }
+    tag_matrix = np.column_stack([out[col].to_numpy() == 'Y' for col in tag_names])
+    names_arr = np.array(list(tag_names.values()))
+    out['CASE_TAGS'] = [", ".join(names_arr[row]) for row in tag_matrix]
+
+    total_case_map[ALL_CASES_SHEET] = out.shape[0]
+    return {ALL_CASES_SHEET: out}
 
 
 def getCountOfCase():

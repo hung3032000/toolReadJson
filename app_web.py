@@ -533,39 +533,124 @@ class JobManager:
             finally:
                 self._export_queue.task_done()
 
-    def create_export(self, job_id: str, context: Optional[Dict[str, Any]] = None) -> Dict:
+    def create_export(
+        self,
+        job_id: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict:
         job = self.get_job(job_id)
+
         if not job:
-            raise HTTPException(status_code=404, detail="job not found")
+            raise HTTPException(
+                status_code=404,
+                detail="job not found",
+            )
+
         if job.status != "succeeded":
-            raise HTTPException(status_code=400, detail="job is not completed")
+            raise HTTPException(
+                status_code=400,
+                detail="job is not completed",
+            )
 
         export_context: Dict[str, Any] = {}
         context = context or {}
+
         if context:
-            sheet = str(context.get("sheet") or "").strip() or ALL_SHEETS_NAME
-            filter_expr = str(context.get("filter_expr") or "").strip()
-            validation, schema = self._compile_filter_expr(job_id, sheet, filter_expr)
+            sheet = (
+                str(
+                    context.get("sheet") or ""
+                ).strip()
+                or ALL_SHEETS_NAME
+            )
+
+            filter_expr = str(
+                context.get("filter_expr") or ""
+            ).strip()
+
+            validation, schema = (
+                self._compile_filter_expr(
+                    job_id,
+                    sheet,
+                    filter_expr,
+                )
+            )
+
             grouping = self._resolve_grouping(
                 schema,
-                group_enabled=bool(context.get("group_enabled")),
-                group_field=str(context.get("group_field") or ""),
-                distinct_field=str(context.get("distinct_field") or ""),
-                min_distinct=context.get("min_distinct") or 2,
+                group_enabled=bool(
+                    context.get("group_enabled")
+                ),
+                group_fields=(
+                    context.get("group_fields")
+                    or []
+                ),
+                group_field=str(
+                    context.get("group_field")
+                    or ""
+                ),
+                distinct_field=str(
+                    context.get("distinct_field")
+                    or ""
+                ),
+                min_distinct=(
+                    context.get("min_distinct")
+                    or 2
+                ),
             )
+
+            resolved_group_fields = (
+                grouping["group_fields"]
+                if grouping
+                else []
+            )
+
             export_context = {
                 "sheet": sheet,
-                "filter_expr": validation.get("normalized_expression", ""),
+                "filter_expr": validation.get(
+                    "normalized_expression",
+                    "",
+                ),
                 "group_enabled": bool(grouping),
-                "group_field": grouping["group_field"] if grouping else "",
-                "distinct_field": grouping["distinct_field"] if grouping else "",
-                "min_distinct": grouping["min_distinct"] if grouping else 2,
+                "group_fields": (
+                    resolved_group_fields
+                ),
+                "group_field": (
+                    resolved_group_fields[0]
+                    if resolved_group_fields
+                    else ""
+                ),
+                "distinct_field": (
+                    grouping["distinct_field"]
+                    if grouping
+                    else ""
+                ),
+                "min_distinct": (
+                    grouping["min_distinct"]
+                    if grouping
+                    else 2
+                ),
             }
 
         export_id = uuid.uuid4().hex[:10]
-        self._store.create_export(export_id, job_id, "pending")
-        self._export_queue.put({"job_id": job_id, "export_id": export_id, "context": export_context})
-        return {"export_id": export_id, "status": "pending"}
+
+        self._store.create_export(
+            export_id,
+            job_id,
+            "pending",
+        )
+
+        self._export_queue.put(
+            {
+                "job_id": job_id,
+                "export_id": export_id,
+                "context": export_context,
+            }
+        )
+
+        return {
+            "export_id": export_id,
+            "status": "pending",
+        }
 
     def get_export(self, job_id: str, export_id: str) -> Dict:
         row = self._store.get_export_for_job(job_id, export_id)
@@ -739,10 +824,35 @@ class JobManager:
                     job_id,
                     sheet,
                     filter_expr=filter_expr,
-                    group_enabled=bool(context.get("group_enabled")),
-                    group_field=str(context.get("group_field") or ""),
-                    distinct_field=str(context.get("distinct_field") or ""),
-                    min_distinct=context.get("min_distinct") or 2,
+                    group_enabled=bool(
+                        context.get(
+                            "group_enabled"
+                        )
+                    ),
+                    group_fields=(
+                        context.get(
+                            "group_fields"
+                        )
+                        or []
+                    ),
+                    group_field=str(
+                        context.get(
+                            "group_field"
+                        )
+                        or ""
+                    ),
+                    distinct_field=str(
+                        context.get(
+                            "distinct_field"
+                        )
+                        or ""
+                    ),
+                    min_distinct=(
+                        context.get(
+                            "min_distinct"
+                        )
+                        or 2
+                    ),
                 )
                 output_sheet = "filtered_results" if sheet == ALL_SHEETS_NAME else sheet
                 self._append_dataframe_to_workbook(
@@ -1015,7 +1125,15 @@ class JobManager:
 
             if not sheets:
                 if not job.output_file or not os.path.exists(job.output_file):
-                    raise HTTPException(status_code=400, detail="output file not ready")
+                    # Job đã chạy xong nhưng không có dữ liệu (0 dòng trả về) => cache rỗng,
+                    # để UI hiển thị "không có dữ liệu" thay vì báo lỗi khó hiểu.
+                    if job.status == "succeeded":
+                        meta = {"created_at": _iso(time.time()), "sheets": [], "empty": True}
+                        meta_path.write_text(
+                            json.dumps(meta, ensure_ascii=True, indent=2), encoding="utf-8"
+                        )
+                        return self._normalize_cache_meta(job_id, meta)
+                    raise HTTPException(status_code=409, detail="job chưa hoàn tất hoặc chưa có kết quả")
                 xls = pd.ExcelFile(job.output_file)
                 used_files = set()
                 for idx, sheet in enumerate(xls.sheet_names, 1):
@@ -1168,28 +1286,104 @@ class JobManager:
             )
         return validation, schema
 
+    @staticmethod
+    def _normalize_group_fields(
+        group_fields: Optional[List[str]] = None,
+        group_field: str = "",
+    ) -> List[str]:
+        """
+        Chuẩn hóa group fields.
+
+        Hỗ trợ:
+        - Contract mới: group_fields=["INV_NO", "BL_SRC_NO"]
+        - Contract cũ: group_field="INV_NO"
+        - Comma-separated: group_fields=["INV_NO,BL_SRC_NO"]
+        """
+        raw_values: List[Any] = []
+
+        if isinstance(group_fields, (list, tuple)):
+            raw_values.extend(group_fields)
+        elif group_fields:
+            raw_values.append(group_fields)
+
+        # Backward compatibility với client cũ.
+        if not raw_values and group_field:
+            raw_values.append(group_field)
+
+        normalized: List[str] = []
+        seen = set()
+
+        for raw in raw_values:
+            for value in str(raw or "").split(","):
+                field = value.strip()
+
+                if not field or field in seen:
+                    continue
+
+                seen.add(field)
+                normalized.append(field)
+
+        return normalized
+
     def _validate_grouping_fields(
         self,
         schema: Dict[str, Any],
-        group_field: str,
+        group_fields: Optional[List[str]],
         distinct_field: str,
-    ) -> Tuple[str, str, List[str]]:
+        group_field: str = "",
+    ) -> Tuple[List[str], str, List[str]]:
         columns = list(schema.get("columns", []))
-        group_field = str(group_field or "").strip()
+
+        normalized_group_fields = self._normalize_group_fields(
+            group_fields=group_fields,
+            group_field=group_field,
+        )
+
         distinct_field = str(distinct_field or "").strip()
 
-        if not group_field or group_field not in columns:
-            raise HTTPException(status_code=400, detail=f"group_field not found: {group_field or '(empty)'}")
+        if not normalized_group_fields:
+            raise HTTPException(
+                status_code=400,
+                detail="group_fields must contain at least one field",
+            )
+
+        missing_fields = [
+            field
+            for field in normalized_group_fields
+            if field not in columns
+        ]
+
+        if missing_fields:
+            raise HTTPException(
+                status_code=400,
+                detail=f"group_fields not found: {', '.join(missing_fields)}",
+            )
+
         if not distinct_field or distinct_field not in columns:
-            raise HTTPException(status_code=400, detail=f"distinct_field not found: {distinct_field or '(empty)'}")
-        if group_field == distinct_field:
-            raise HTTPException(status_code=400, detail="group_field and distinct_field must be different")
-        return group_field, distinct_field, columns
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "distinct_field not found: "
+                    f"{distinct_field or '(empty)'}"
+                ),
+            )
+
+        if distinct_field in normalized_group_fields:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "distinct_field must be different "
+                    "from every group field"
+                ),
+            )
+
+        return normalized_group_fields, distinct_field, columns
 
     def _resolve_grouping(
         self,
         schema: Dict[str, Any],
         group_enabled: bool = False,
+        group_fields: Optional[List[str]] = None,
         group_field: str = "",
         distinct_field: str = "",
         min_distinct: int = 2,
@@ -1197,16 +1391,35 @@ class JobManager:
         if not group_enabled:
             return None
 
-        group_field, distinct_field, _ = self._validate_grouping_fields(schema, group_field, distinct_field)
+        normalized_group_fields, distinct_field, _ = (
+            self._validate_grouping_fields(
+                schema,
+                group_fields=group_fields,
+                group_field=group_field,
+                distinct_field=distinct_field,
+            )
+        )
+
         try:
             min_distinct = int(min_distinct or 2)
         except Exception:
-            raise HTTPException(status_code=400, detail="min_distinct must be an integer >= 2")
+            raise HTTPException(
+                status_code=400,
+                detail="min_distinct must be an integer >= 2",
+            )
+
         if min_distinct < 2:
-            raise HTTPException(status_code=400, detail="min_distinct must be >= 2")
+            raise HTTPException(
+                status_code=400,
+                detail="min_distinct must be >= 2",
+            )
 
         return {
-            "group_field": group_field,
+            "group_fields": normalized_group_fields,
+
+            # Giữ để client cũ vẫn đọc được.
+            "group_field": normalized_group_fields[0],
+
             "distinct_field": distinct_field,
             "min_distinct": min_distinct,
         }
@@ -1216,88 +1429,212 @@ class JobManager:
         df: pd.DataFrame,
         grouping: Dict[str, Any],
     ) -> pd.Series:
-        """Vectorized mask of rows belonging to groups whose distinct count >= min.
-
-        Replaces a per-group Python loop that dominated export/grouped-view latency
-        (~23s on 280k rows). ``nunique`` + ``isin`` run in C and are ~150x faster.
         """
-        group_field = grouping["group_field"]
+        Trả về các dòng thuộc group có:
+
+        COUNT(DISTINCT distinct_field) >= min_distinct
+
+        Hỗ trợ một hoặc nhiều group fields.
+        """
+        group_fields = grouping["group_fields"]
         distinct_field = grouping["distinct_field"]
         min_distinct = grouping["min_distinct"]
+
         if df.empty:
-            return pd.Series(False, index=df.index)
+            return pd.Series(
+                False,
+                index=df.index,
+                dtype=bool,
+            )
 
-        distinct_counts = df.groupby(group_field, dropna=False)[distinct_field].nunique(dropna=True)
-        valid_index = distinct_counts.index[distinct_counts.to_numpy() >= min_distinct]
+        null_sentinel = "\x00__NULL_GROUP__"
+
+        work = df[group_fields].astype(object).copy()
+
+        for field in group_fields:
+            work[field] = work[field].where(
+                work[field].notna(),
+                null_sentinel,
+            )
+
+        work["__distinct_value"] = df[
+            distinct_field
+        ].to_numpy()
+
+        distinct_counts = (
+            work.groupby(
+                group_fields,
+                sort=False,
+                dropna=False,
+            )["__distinct_value"]
+            .nunique(dropna=True)
+        )
+
+        valid_index = distinct_counts.index[
+            distinct_counts.to_numpy() >= min_distinct
+        ]
+
         if len(valid_index) == 0:
-            return pd.Series(False, index=df.index)
+            return pd.Series(
+                False,
+                index=df.index,
+                dtype=bool,
+            )
 
-        null_qualifies = bool(pd.isna(valid_index).any())
-        valid_nonnull = valid_index[~pd.isna(valid_index)]
-        mask = df[group_field].isin(list(valid_nonnull))
-        if null_qualifies:
-            mask = mask | df[group_field].isna()
-        return mask
+        if len(group_fields) == 1:
+            mask = work[group_fields[0]].isin(
+                valid_index
+            ).to_numpy()
+        else:
+            row_index = pd.MultiIndex.from_frame(
+                work[group_fields],
+                names=group_fields,
+            )
+            mask = row_index.isin(valid_index)
+
+        return pd.Series(
+            mask,
+            index=df.index,
+            dtype=bool,
+        )
 
     def _build_group_summary_rows(
         self,
         df: pd.DataFrame,
         grouping: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
-        """Build the grouped-view summary rows for an already group-filtered frame."""
-        group_field = grouping["group_field"]
+        group_fields = grouping["group_fields"]
         distinct_field = grouping["distinct_field"]
         min_distinct = grouping["min_distinct"]
+
         if df.empty:
             return []
 
-        # Route the null group through a sentinel key so all index/lookup ops work
-        # on plain hashable strings (NaN keys break Series.get / dict lookups).
-        null_key = "\x00__NULL_GROUP__"
-        work = pd.DataFrame(
-            {
-                "_g": df[group_field].astype(object),
-                "_d": df[distinct_field],
-            }
-        )
-        null_mask = work["_g"].isna()
-        if null_mask.any():
-            work.loc[null_mask, "_g"] = null_key
+        null_sentinel = "\x00__NULL_GROUP__"
 
-        grouped = work.groupby("_g", sort=False)
+        work = df[
+            group_fields + [distinct_field]
+        ].copy()
+
+        for field in group_fields:
+            work[field] = (
+                work[field]
+                .astype(object)
+                .where(
+                    work[field].notna(),
+                    null_sentinel,
+                )
+            )
+
+        grouped = work.groupby(
+            group_fields,
+            sort=False,
+            dropna=False,
+        )
+
         row_counts = grouped.size()
-        distinct_counts = grouped["_d"].nunique(dropna=True)
-        keep_keys = distinct_counts.index[distinct_counts.to_numpy() >= min_distinct]
+
+        distinct_counts = grouped[
+            distinct_field
+        ].nunique(dropna=True)
+
+        keep_keys = distinct_counts.index[
+            distinct_counts.to_numpy() >= min_distinct
+        ]
+
         if len(keep_keys) == 0:
             return []
 
-        pairs = work.loc[work["_d"].notna(), ["_g", "_d"]].copy()
-        pairs["_d"] = pairs["_d"].astype(str)
-        pairs = pairs.drop_duplicates().sort_values("_d")
-        distinct_values = pairs.groupby("_g", sort=False)["_d"].agg(", ".join)
+        pairs = work.loc[
+            work[distinct_field].notna(),
+            group_fields + [distinct_field],
+        ].copy()
+
+        pairs[distinct_field] = pairs[
+            distinct_field
+        ].astype(str)
+
+        pairs = (
+            pairs.drop_duplicates()
+            .sort_values(
+                by=group_fields + [distinct_field],
+                kind="stable",
+            )
+        )
+
+        distinct_values = (
+            pairs.groupby(
+                group_fields,
+                sort=False,
+            )[distinct_field]
+            .agg(", ".join)
+        )
 
         summary_rows: List[Dict[str, Any]] = []
+
         for key in keep_keys:
-            is_null_group = key == null_key
+            key_values = (
+                (key,)
+                if len(group_fields) == 1
+                else tuple(key)
+            )
+
+            row = {
+                field: (
+                    None
+                    if value == null_sentinel
+                    else str(value)
+                )
+                for field, value in zip(
+                    group_fields,
+                    key_values,
+                )
+            }
+
             values_text = distinct_values.get(key)
-            summary_rows.append(
+
+            row.update(
                 {
-                    group_field: None if is_null_group else str(key),
-                    "GROUP_ROW_COUNT": int(row_counts.get(key, 0)),
-                    "GROUP_DISTINCT_COUNT": int(distinct_counts.get(key, 0)),
-                    "GROUP_DISTINCT_VALUES": values_text if isinstance(values_text, str) else None,
+                    "GROUP_ROW_COUNT": int(
+                        row_counts.get(key, 0)
+                    ),
+                    "GROUP_DISTINCT_COUNT": int(
+                        distinct_counts.get(key, 0)
+                    ),
+                    "GROUP_DISTINCT_VALUES": (
+                        values_text
+                        if isinstance(values_text, str)
+                        else None
+                    ),
                 }
             )
 
+            summary_rows.append(row)
+
         summary_rows.sort(
             key=lambda row: (
-                -int(row.get("GROUP_DISTINCT_COUNT", 0) or 0),
-                -int(row.get("GROUP_ROW_COUNT", 0) or 0),
-                str(row.get(group_field) or ""),
+                -int(
+                    row.get(
+                        "GROUP_DISTINCT_COUNT",
+                        0,
+                    )
+                    or 0
+                ),
+                -int(
+                    row.get(
+                        "GROUP_ROW_COUNT",
+                        0,
+                    )
+                    or 0
+                ),
+                tuple(
+                    str(row.get(field) or "")
+                    for field in group_fields
+                ),
             )
         )
-        return summary_rows
 
+        return summary_rows
     def _apply_grouping_to_frame(
         self,
         df: pd.DataFrame,
@@ -1373,25 +1710,50 @@ class JobManager:
         sheet: str,
         filter_expr: str = "",
         group_enabled: bool = False,
+        group_fields: Optional[List[str]] = None,
         group_field: str = "",
         distinct_field: str = "",
         min_distinct: int = 2,
         with_summary: bool = False,
-    ) -> Tuple[pd.DataFrame, Dict[str, Any], Dict[str, Any], int, Optional[Dict[str, Any]], List[Dict[str, Any]]]:
-        df, validation, schema, unfiltered_total = self.materialize_filtered_frame(
-            job_id,
-            sheet,
-            filter_expr=filter_expr,
+    ) -> Tuple[
+        pd.DataFrame,
+        Dict[str, Any],
+        Dict[str, Any],
+        int,
+        Optional[Dict[str, Any]],
+        List[Dict[str, Any]],
+    ]:
+        df, validation, schema, unfiltered_total = (
+            self.materialize_filtered_frame(
+                job_id,
+                sheet,
+                filter_expr=filter_expr,
+            )
         )
+
         grouping = self._resolve_grouping(
             schema,
             group_enabled=group_enabled,
+            group_fields=group_fields,
             group_field=group_field,
             distinct_field=distinct_field,
             min_distinct=min_distinct,
         )
-        df, grouped_rows = self._apply_grouping_to_frame(df, grouping, with_summary=with_summary)
-        return df, validation, schema, unfiltered_total, grouping, grouped_rows
+
+        df, grouped_rows = self._apply_grouping_to_frame(
+            df,
+            grouping,
+            with_summary=with_summary,
+        )
+
+        return (
+            df,
+            validation,
+            schema,
+            unfiltered_total,
+            grouping,
+            grouped_rows,
+        )
 
     def query_results(
         self,
@@ -1404,39 +1766,120 @@ class JobManager:
         filter_expr: str = "",
         filters: Optional[List[Dict]] = None,
         group_enabled: bool = False,
+        group_fields: Optional[List[str]] = None,
         group_field: str = "",
         distinct_field: str = "",
         min_distinct: int = 2,
     ):
         filters = filters or []
-        df, validation, schema, unfiltered_total, grouping, _ = self.materialize_query_frame(
+
+        (
+            df,
+            validation,
+            schema,
+            unfiltered_total,
+            grouping,
+            _,
+        ) = self.materialize_query_frame(
             job_id,
             sheet,
             filter_expr=filter_expr,
             group_enabled=group_enabled,
+            group_fields=group_fields,
             group_field=group_field,
             distinct_field=distinct_field,
             min_distinct=min_distinct,
         )
-        normalized_filter_expr = validation.get("normalized_expression", "")
+
+        normalized_filter_expr = validation.get(
+            "normalized_expression",
+            "",
+        )
+
         columns = list(schema.get("columns", []))
+
         source_rows_filtered = int(len(df.index))
+
         if search and search_field in df.columns:
             token = search.strip().lower()
-            df = df[df[search_field].astype(str).str.lower().str.contains(token, na=False)]
+
+            df = df[
+                df[search_field]
+                .astype(str)
+                .str.lower()
+                .str.contains(token, na=False)
+            ]
+
         for item in filters:
-            col = str(item.get("field", "")).strip()
-            val = str(item.get("value", "")).strip()
+            col = str(
+                item.get("field", "")
+            ).strip()
+
+            val = str(
+                item.get("value", "")
+            ).strip()
+
             if col and val and col in df.columns:
-                df = df[df[col].astype(str).str.lower().str.contains(val.lower(), na=False)]
+                df = df[
+                    df[col]
+                    .astype(str)
+                    .str.lower()
+                    .str.contains(
+                        val.lower(),
+                        na=False,
+                    )
+                ]
+
         filtered_total = len(df)
-        total_pages = max(1, int(math.ceil(filtered_total / float(page_size)))) if filtered_total else 1
-        page = max(1, min(int(page), total_pages))
+
+        total_pages = (
+            max(
+                1,
+                int(
+                    math.ceil(
+                        filtered_total
+                        / float(page_size)
+                    )
+                ),
+            )
+            if filtered_total
+            else 1
+        )
+
+        page = max(
+            1,
+            min(int(page), total_pages),
+        )
+
         offset = (page - 1) * page_size
-        page_df = df.iloc[offset : offset + page_size].copy()
-        page_df = page_df.where(pd.notnull(page_df), None)
-        page_row_from = offset + 1 if filtered_total else 0
-        page_row_to = offset + len(page_df.index) if filtered_total else 0
+
+        page_df = df.iloc[
+            offset : offset + page_size
+        ].copy()
+
+        page_df = page_df.where(
+            pd.notnull(page_df),
+            None,
+        )
+
+        page_row_from = (
+            offset + 1
+            if filtered_total
+            else 0
+        )
+
+        page_row_to = (
+            offset + len(page_df.index)
+            if filtered_total
+            else 0
+        )
+
+        resolved_group_fields = (
+            grouping["group_fields"]
+            if grouping
+            else []
+        )
+
         return {
             "sheet": sheet,
             "page": page,
@@ -1451,87 +1894,223 @@ class JobManager:
             "page_row_to": page_row_to,
             "columns": columns,
             "filter_expr": filter_expr,
-            "normalized_filter_expression": normalized_filter_expr,
+            "normalized_filter_expression": (
+                normalized_filter_expr
+            ),
             "applied_filters": filters,
             "group_enabled": bool(grouping),
-            "group_field": grouping["group_field"] if grouping else "",
-            "distinct_field": grouping["distinct_field"] if grouping else "",
-            "min_distinct": grouping["min_distinct"] if grouping else None,
-            "source_rows_filtered": source_rows_filtered,
-            "rows": page_df.to_dict(orient="records"),
+
+            # Contract mới.
+            "group_fields": resolved_group_fields,
+
+            # Contract cũ.
+            "group_field": (
+                resolved_group_fields[0]
+                if resolved_group_fields
+                else ""
+            ),
+
+            "distinct_field": (
+                grouping["distinct_field"]
+                if grouping
+                else ""
+            ),
+            "min_distinct": (
+                grouping["min_distinct"]
+                if grouping
+                else None
+            ),
+            "source_rows_filtered": (
+                source_rows_filtered
+            ),
+            "rows": page_df.to_dict(
+                orient="records"
+            ),
         }
 
     def query_grouped_results(
         self,
         job_id: str,
         sheet: str,
-        group_field: str,
         distinct_field: str,
         page: int,
         page_size: int,
+        group_fields: Optional[List[str]] = None,
+        group_field: str = "",
         filter_expr: str = "",
         min_distinct: int = 2,
         search: str = "",
     ):
-        df, validation, _, source_rows_total, grouping, grouped_rows = self.materialize_query_frame(
+        (
+            df,
+            validation,
+            _,
+            source_rows_total,
+            grouping,
+            grouped_rows,
+        ) = self.materialize_query_frame(
             job_id,
             sheet,
             filter_expr=filter_expr,
             group_enabled=True,
+            group_fields=group_fields,
             group_field=group_field,
             distinct_field=distinct_field,
             min_distinct=min_distinct,
             with_summary=True,
         )
-        normalized_filter_expr = validation.get("normalized_expression", "")
-        if not grouping:
-            raise HTTPException(status_code=400, detail="grouping configuration is required")
 
-        group_field = grouping["group_field"]
-        distinct_field = grouping["distinct_field"]
-        min_distinct = grouping["min_distinct"]
-        summary_columns = [group_field, "GROUP_ROW_COUNT", "GROUP_DISTINCT_COUNT", "GROUP_DISTINCT_VALUES"]
-        source_rows_filtered = int(len(df.index))
+        normalized_filter_expr = validation.get(
+            "normalized_expression",
+            "",
+        )
+
+        if not grouping:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "grouping configuration "
+                    "is required"
+                ),
+            )
+
+        resolved_group_fields = grouping[
+            "group_fields"
+        ]
+
+        distinct_field = grouping[
+            "distinct_field"
+        ]
+
+        min_distinct = grouping[
+            "min_distinct"
+        ]
+
+        summary_columns = [
+            *resolved_group_fields,
+            "GROUP_ROW_COUNT",
+            "GROUP_DISTINCT_COUNT",
+            "GROUP_DISTINCT_VALUES",
+        ]
+
+        source_rows_filtered = int(
+            len(df.index)
+        )
+
         search = str(search or "").strip()
-        visible_grouped_rows = list(grouped_rows)
+
+        visible_grouped_rows = list(
+            grouped_rows
+        )
+
         if search:
             token = search.lower()
+
             visible_grouped_rows = [
                 row
                 for row in visible_grouped_rows
-                if token in str(row.get(group_field) or "").lower()
-                or token in str(row.get("GROUP_DISTINCT_VALUES") or "").lower()
+                if (
+                    any(
+                        token
+                        in str(
+                            row.get(field) or ""
+                        ).lower()
+                        for field
+                        in resolved_group_fields
+                    )
+                    or token
+                    in str(
+                        row.get(
+                            "GROUP_DISTINCT_VALUES"
+                        )
+                        or ""
+                    ).lower()
+                )
             ]
 
-        filtered_total = len(visible_grouped_rows)
-        total_pages = max(1, int(math.ceil(filtered_total / float(page_size)))) if filtered_total else 1
-        page = max(1, min(int(page), total_pages))
+        filtered_total = len(
+            visible_grouped_rows
+        )
+
+        total_pages = (
+            max(
+                1,
+                int(
+                    math.ceil(
+                        filtered_total
+                        / float(page_size)
+                    )
+                ),
+            )
+            if filtered_total
+            else 1
+        )
+
+        page = max(
+            1,
+            min(int(page), total_pages),
+        )
+
         offset = (page - 1) * page_size
-        page_rows = visible_grouped_rows[offset : offset + page_size]
-        page_row_from = offset + 1 if filtered_total else 0
-        page_row_to = offset + len(page_rows) if filtered_total else 0
+
+        page_rows = visible_grouped_rows[
+            offset : offset + page_size
+        ]
+
+        page_row_from = (
+            offset + 1
+            if filtered_total
+            else 0
+        )
+
+        page_row_to = (
+            offset + len(page_rows)
+            if filtered_total
+            else 0
+        )
+
         return {
             "mode": "grouped",
             "sheet": sheet,
             "page": page,
             "page_size": page_size,
             "total": int(filtered_total),
-            "unfiltered_total": source_rows_total,
-            "filtered_total": int(filtered_total),
-            "source_rows_total": source_rows_total,
-            "source_rows_filtered": int(source_rows_filtered),
+            "unfiltered_total": (
+                source_rows_total
+            ),
+            "filtered_total": int(
+                filtered_total
+            ),
+            "source_rows_total": (
+                source_rows_total
+            ),
+            "source_rows_filtered": (
+                source_rows_filtered
+            ),
             "total_pages": total_pages,
             "has_prev": page > 1,
             "has_next": page < total_pages,
             "page_row_from": page_row_from,
             "page_row_to": page_row_to,
             "columns": summary_columns,
-            "group_field": group_field,
+
+            # Contract mới.
+            "group_fields": (
+                resolved_group_fields
+            ),
+
+            # Contract cũ.
+            "group_field": (
+                resolved_group_fields[0]
+            ),
+
             "distinct_field": distinct_field,
             "min_distinct": min_distinct,
             "search": search,
             "filter_expr": filter_expr,
-            "normalized_filter_expression": normalized_filter_expr,
+            "normalized_filter_expression": (
+                normalized_filter_expr
+            ),
             "group_enabled": True,
             "rows": page_rows,
         }
@@ -1567,6 +2146,7 @@ class JobManager:
         values: List[Any],
         filter_expr: str = "",
         group_enabled: bool = False,
+        group_fields: Optional[List[str]] = None,
         group_field: str = "",
         distinct_field: str = "",
         min_distinct: int = 2,
@@ -1576,6 +2156,7 @@ class JobManager:
             sheet,
             filter_expr=filter_expr,
             group_enabled=group_enabled,
+            group_fields=group_fields,
             group_field=group_field,
             distinct_field=distinct_field,
             min_distinct=min_distinct,
@@ -1625,7 +2206,11 @@ class JobManager:
         missing_values = [value for value in distinct_values if value not in matched_value_set]
         matched_df = matched_df.reindex(columns=columns).where(pd.notnull(matched_df), None)
         normalized_filter_expr = validation.get("normalized_expression", "")
-
+        resolved_group_fields = (
+            grouping["group_fields"]
+            if grouping
+            else []
+        )
         return {
             "sheet": sheet,
             "field": field,
@@ -1642,11 +2227,25 @@ class JobManager:
             "filter_expr": filter_expr,
             "normalized_filter_expression": normalized_filter_expr,
             "group_enabled": bool(grouping),
-            "group_field": grouping["group_field"] if grouping else "",
-            "distinct_field": grouping["distinct_field"] if grouping else "",
-            "min_distinct": grouping["min_distinct"] if grouping else None,
+            "group_fields": resolved_group_fields,
+            "group_field": (
+                resolved_group_fields[0]
+                if resolved_group_fields
+                else ""
+            ),
+            "distinct_field": (
+                grouping["distinct_field"]
+                if grouping
+                else ""
+            ),
+            "min_distinct": (
+                grouping["min_distinct"]
+                if grouping
+                else None
+            ),
             "source_rows_total": int(unfiltered_total),
             "source_rows_filtered": int(len(df.index)),
+            
         }
 
 
@@ -1672,7 +2271,15 @@ class LookupRowsRequest(BaseModel):
     values: List[str] = Field(default_factory=list)
     filter_expr: str = ""
     group_enabled: bool = False
+
+    # Contract mới.
+    group_fields: List[str] = Field(
+        default_factory=list
+    )
+
+    # Contract cũ.
     group_field: str = ""
+
     distinct_field: str = ""
     min_distinct: int = 2
 
@@ -1681,7 +2288,15 @@ class CreateExportRequest(BaseModel):
     sheet: str = ""
     filter_expr: str = ""
     group_enabled: bool = False
+
+    # Contract mới.
+    group_fields: List[str] = Field(
+        default_factory=list
+    )
+
+    # Contract cũ.
     group_field: str = ""
+
     distinct_field: str = ""
     min_distinct: int = 2
 
@@ -1804,8 +2419,13 @@ def validate_filter(job_id: str, req: ValidateFilterRequest):
     return manager.validate_filter(job_id, req.expression, sheet=req.sheet or ALL_SHEETS_NAME)
 
 
-@app.post("/api/v1/jobs/{job_id}/utility/lookup-rows")
-def lookup_job_rows(job_id: str, req: LookupRowsRequest):
+@app.post(
+    "/api/v1/jobs/{job_id}/utility/lookup-rows"
+)
+def lookup_job_rows(
+    job_id: str,
+    req: LookupRowsRequest,
+):
     return manager.lookup_rows(
         job_id,
         sheet=req.sheet or ALL_SHEETS_NAME,
@@ -1813,6 +2433,7 @@ def lookup_job_rows(job_id: str, req: LookupRowsRequest):
         values=req.values,
         filter_expr=req.filter_expr,
         group_enabled=req.group_enabled,
+        group_fields=req.group_fields,
         group_field=req.group_field,
         distinct_field=req.distinct_field,
         min_distinct=req.min_distinct,
@@ -1824,32 +2445,69 @@ def get_job_results(
     job_id: str,
     sheet: str = Query(...),
     page: int = Query(1, ge=1),
-    page_size: int = Query(100, ge=1, le=500),
+    page_size: int = Query(
+        100,
+        ge=1,
+        le=500,
+    ),
     search: str = Query(""),
     search_field: str = Query("INV_NO"),
     filter_expr: str = Query(""),
     group_enabled: bool = Query(False),
+
+    # Query mới hỗ trợ:
+    # ?group_fields=INV_NO
+    # &group_fields=BL_SRC_NO
+    group_fields: Optional[List[str]] = Query(
+        None
+    ),
+
+    # Query cũ.
     group_field: str = Query(""),
+
     distinct_field: str = Query(""),
-    min_distinct: int = Query(2, ge=2, le=1000),
+    min_distinct: int = Query(
+        2,
+        ge=2,
+        le=1000,
+    ),
     filters_json: str = Query(""),
 ):
     filters = []
+
     if filters_json:
         try:
             raw = json.loads(filters_json)
+
             if isinstance(raw, list):
                 for item in raw:
                     if not isinstance(item, dict):
                         continue
+
                     filters.append(
                         {
-                            "field": str(item.get("field", "")).strip(),
-                            "value": str(item.get("value", "")).strip(),
+                            "field": str(
+                                item.get(
+                                    "field",
+                                    "",
+                                )
+                            ).strip(),
+                            "value": str(
+                                item.get(
+                                    "value",
+                                    "",
+                                )
+                            ).strip(),
                         }
                     )
         except Exception:
-            raise HTTPException(status_code=400, detail="filters_json is invalid")
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "filters_json is invalid"
+                ),
+            )
+
     return manager.query_results(
         job_id,
         sheet,
@@ -1860,27 +2518,45 @@ def get_job_results(
         filter_expr=filter_expr,
         filters=filters,
         group_enabled=group_enabled,
+        group_fields=group_fields or [],
         group_field=group_field,
         distinct_field=distinct_field,
         min_distinct=min_distinct,
     )
 
-
-@app.get("/api/v1/jobs/{job_id}/grouped-results")
+@app.get(
+    "/api/v1/jobs/{job_id}/grouped-results"
+)
 def get_job_grouped_results(
     job_id: str,
     sheet: str = Query(...),
-    group_field: str = Query(...),
+
+    group_fields: Optional[List[str]] = Query(
+        None
+    ),
+
+    # Backward compatibility.
+    group_field: str = Query(""),
+
     distinct_field: str = Query(...),
     page: int = Query(1, ge=1),
-    page_size: int = Query(100, ge=1, le=500),
+    page_size: int = Query(
+        100,
+        ge=1,
+        le=500,
+    ),
     filter_expr: str = Query(""),
-    min_distinct: int = Query(2, ge=2, le=1000),
+    min_distinct: int = Query(
+        2,
+        ge=2,
+        le=1000,
+    ),
     search: str = Query(""),
 ):
     return manager.query_grouped_results(
         job_id,
         sheet,
+        group_fields=group_fields or [],
         group_field=group_field,
         distinct_field=distinct_field,
         page=page,
@@ -1923,6 +2599,7 @@ def create_export(job_id: str, req: Optional[CreateExportRequest] = Body(None)):
             "sheet": req.sheet,
             "filter_expr": req.filter_expr,
             "group_enabled": req.group_enabled,
+            "group_fields": req.group_fields,
             "group_field": req.group_field,
             "distinct_field": req.distinct_field,
             "min_distinct": req.min_distinct,
